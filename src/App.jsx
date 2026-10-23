@@ -9,6 +9,7 @@ import WordList from './screens/WordList.jsx';
 import EditWord from './screens/EditWord.jsx';
 import WrongNote from './screens/WrongNote.jsx';
 import Settings from './screens/Settings.jsx';
+import AutoFillBatch from './screens/AutoFillBatch.jsx';
 
 export default function App() {
   const { path, query } = useRoute();
@@ -40,6 +41,10 @@ export default function App() {
       break;
     case 'words':
       screen = id ? <EditWord id={id} /> : <WordList />;
+      break;
+    case 'autofill':
+      screen = <AutoFillBatch />;
+      tab = 'words';
       break;
     case 'note':
       screen = <WrongNote />;

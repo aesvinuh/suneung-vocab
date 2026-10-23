@@ -49,12 +49,14 @@ export function normalizeWord(input, now = Date.now()) {
     pos: input.pos || '',
     tone: input.tone || '',
     nuance: (input.nuance || '').trim(),
+    definition: (input.definition || '').trim(), // 영영 뜻풀이 (자동 채우기)
     example: (input.example || '').trim(),
     exampleKo: (input.exampleKo || '').trim(),
     synonyms: splitList(input.synonyms),
     antonyms: splitList(input.antonyms),
     createdAt: input.createdAt || now,
     updatedAt: input.updatedAt || now,
+    sources: { ...(input.sources || {}) }, // 칸별 출처: mw | fd | ai | user
     stats: { ...emptyStats(), ...(input.stats || {}) },
     note: { ...emptyNote(), ...(input.note || {}), confusedWith: { ...(input.note?.confusedWith || {}) } },
   };
@@ -71,6 +73,11 @@ export function effectiveTone(word) {
   ].filter(([, re]) => re.test(t));
   return hits.length === 1 ? hits[0][0] : '';
 }
+
+// 뜻이 없는 단어는 출제·오답 보기에서 제외
+export const hasMeaning = (w) => w.meanings.length > 0;
+// '미완성' = 뜻·뉘앙스·예문 중 하나라도 비어 있음 → 일괄 자동 채우기 대상
+export const isIncomplete = (w) => !w.meanings.length || !w.nuance || !w.example;
 
 export function errorRate(word) {
   return word.stats.shown ? word.stats.wrong / word.stats.shown : 0;

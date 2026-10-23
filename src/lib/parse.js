@@ -1,6 +1,6 @@
 // 일괄 추가용 텍스트 파서
 // 한 줄 = 단어 | 뜻 | 뉘앙스 | 예문 | 예문 해석 [| 품사 | 유의어 | 반의어]
-// 뜻·유의어·반의어는 쉼표(,)나 슬래시(/)로 여러 개. '|' 대신 탭(엑셀 복사)도 가능. '#'으로 시작하면 무시.
+// 뜻·유의어·반의어는 쉼표(,)나 슬래시(/)로 여러 개. 단어만 있는 줄은 '미완성'으로 추가. '|' 대신 탭(엑셀 복사)도 가능. '#'으로 시작하면 무시.
 import { POS_OPTIONS, sameWord } from './word.js';
 
 const POS_ALIASES = {
@@ -25,9 +25,9 @@ export function parseBulk(text, existingWords = []) {
     const raw = line.trim();
     if (!raw || raw.startsWith('#')) return;
     const cols = (raw.includes('|') ? raw.split('|') : raw.split('\t')).map((c) => c.trim());
-    const [word, meanings, nuance = '', example = '', exampleKo = '', pos = '', synonyms = '', antonyms = ''] = cols;
-    if (!word || !meanings) {
-      errors.push({ line: i + 1, text: raw, reason: '단어와 뜻은 필수' });
+    const [word, meanings = '', nuance = '', example = '', exampleKo = '', pos = '', synonyms = '', antonyms = ''] = cols;
+    if (!word) {
+      errors.push({ line: i + 1, text: raw, reason: '단어가 비어 있음' });
       return;
     }
     const key = word.toLowerCase();

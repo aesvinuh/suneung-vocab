@@ -33,6 +33,7 @@ export function summarize(w) {
     meanings: w.meanings,
     tone: effectiveTone(w),
     nuance: w.nuance,
+    definition: w.definition,
     example: w.example, // 별표 표시는 화면의 <Sentence>가 처리
     exampleKo: w.exampleKo,
     synonyms: w.synonyms,

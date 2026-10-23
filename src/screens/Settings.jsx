@@ -4,6 +4,10 @@ import PageHeader from '../components/PageHeader.jsx';
 import { downloadBackup, parseBackup } from '../lib/backup.js';
 import { SAMPLE_WORDS } from '../data/sampleWords.js';
 import { sameWord } from '../lib/word.js';
+import { getKeys, setKeys } from '../lib/apiKeys.js';
+import { lookupMw } from '../lib/dictionary.js';
+import { testClaudeKey } from '../lib/aiFill.js';
+import { useOnline } from '../lib/useOnline.js';
 
 export default function Settings() {
   const { words, daily, importData, clearAll, addWords } = useVocab();
@@ -47,6 +51,8 @@ export default function Settings() {
     <>
       <PageHeader title="설정" />
       {msg && <p className={'notice ' + msg.type}>{msg.text}</p>}
+
+      <ApiKeys />
 
       <section className="card">
         <h2 className="section-title">백업</h2>
@@ -95,5 +101,79 @@ export default function Settings() {
         </ul>
       </section>
     </>
+  );
+}
+
+function ApiKeys() {
+  const online = useOnline();
+  const [keys, setK] = useState(getKeys);
+  const [show, setShow] = useState(false);
+  const [status, setStatus] = useState({});
+  const saved = getKeys();
+  const dirty = keys.mw !== saved.mw || keys.claude !== saved.claude;
+
+  const save = () => {
+    const ok = setKeys(keys);
+    setStatus({ save: ok ? '이 브라우저에 저장했어요.' : '저장하지 못했어요 (시크릿 모드인지 확인).' });
+  };
+
+  const test = async (which) => {
+    setStatus((s) => ({ ...s, [which]: '확인 중…' }));
+    try {
+      if (which === 'mw') await lookupMw('test', keys.mw.trim());
+      else await testClaudeKey(keys.claude.trim());
+      setStatus((s) => ({ ...s, [which]: '✓ 연결됐어요' }));
+    } catch (e) {
+      setStatus((s) => ({ ...s, [which]: '✗ ' + e.message }));
+    }
+  };
+
+  const field = (which, label, placeholder) => (
+    <label className="field">
+      <span className="field-label">{label}</span>
+      <div className="input-row">
+        <input
+          type={show ? 'text' : 'password'}
+          value={keys[which]}
+          onChange={(e) => setK((k) => ({ ...k, [which]: e.target.value }))}
+          placeholder={placeholder}
+          autoComplete="off"
+          autoCapitalize="none"
+          spellCheck={false}
+        />
+        <button type="button" className="btn small" disabled={!online || !keys[which].trim()} onClick={() => test(which)}>
+          확인
+        </button>
+      </div>
+      {status[which] && <small className={'hint' + (status[which].startsWith('✗') ? ' warn' : '')}>{status[which]}</small>}
+    </label>
+  );
+
+  return (
+    <section className="card">
+      <h2 className="section-title">자동 채우기 API 키</h2>
+      <p className="hint">
+        키는 이 기기의 이 브라우저에만 저장돼요. 코드·GitHub·JSON 백업에는 들어가지 않으니, 폰과 컴퓨터에 각각 넣어 주세요.
+      </p>
+      <div className="form">
+        {field('mw', "Merriam-Webster Learner's 키 (무료)", 'dictionaryapi.com에서 발급')}
+        {field('claude', 'Claude API 키 (유료, 사용한 만큼)', 'sk-ant-…')}
+        <label className="check-line">
+          <input type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} /> 키 보이기
+        </label>
+        <button className="btn primary block" disabled={!dirty} onClick={save}>
+          키 저장
+        </button>
+        {status.save && <small className="hint">{status.save}</small>}
+      </div>
+      <ul className="help">
+        <li>
+          Merriam-Webster: <a href="https://dictionaryapi.com/register/index" target="_blank" rel="noreferrer">dictionaryapi.com 가입</a> → 'Request API Key 1'에서 <b>Merriam-Webster's Learner's Dictionary</b>를 고르면 키가 나와요. 없으면 Free Dictionary만 써요.
+        </li>
+        <li>
+          Claude: <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">console.anthropic.com</a> → API Keys → Create Key. 결제 수단 등록이 필요해요. 없으면 영영 뜻·예문·유의어만 채워져요.
+        </li>
+      </ul>
+    </section>
   );
 }

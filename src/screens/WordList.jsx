@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react';
 import { useVocab } from '../store/VocabContext.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import { ToneTag } from '../components/WordDetail.jsx';
-import { errorRate } from '../lib/word.js';
+import { errorRate, isIncomplete } from '../lib/word.js';
 
 const FILTERS = [
   { key: 'all', label: '전체', fn: () => true },
+  { key: 'incomplete', label: '미완성', fn: isIncomplete },
   { key: 'noExample', label: '예문 없음', fn: (w) => !w.example },
   { key: 'noNuance', label: '뉘앙스 없음', fn: (w) => !w.nuance },
   { key: 'noSyn', label: '유의어 없음', fn: (w) => w.synonyms.length === 0 },
@@ -53,6 +54,11 @@ export default function WordList() {
           </button>
         ))}
       </div>
+      {counts.incomplete > 0 && (
+        <a className="link-btn" href="#/autofill">
+          미완성 {counts.incomplete}개 일괄 자동 채우기 →
+        </a>
+      )}
       <div className="sort-row">
         {Object.entries(SORTS).map(([k, s]) => (
           <button key={k} className={'sort' + (sort === k ? ' on' : '')} onClick={() => setSort(k)}>
@@ -73,7 +79,7 @@ export default function WordList() {
                   <ToneTag word={w} />
                   {w.note.inNote && <span className="tag-note">오답</span>}
                 </div>
-                <span className="muted ellipsis">{w.meanings.join(', ')}</span>
+                <span className="muted ellipsis">{w.meanings.length ? w.meanings.join(', ') : '뜻 없음 (출제 안 됨)'}</span>
                 <span className="row-meta">
                   {w.stats.shown > 0 ? `${w.stats.correct}/${w.stats.shown}` : '새 단어'}
                   {!w.example && ' · 예문 없음'}

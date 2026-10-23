@@ -1,5 +1,5 @@
 import { useVocab } from '../store/VocabContext.jsx';
-import { todayKey } from '../lib/word.js';
+import { hasMeaning, isIncomplete, todayKey } from '../lib/word.js';
 import { SAMPLE_WORDS } from '../data/sampleWords.js';
 import { navigate } from '../lib/router.js';
 
@@ -8,6 +8,8 @@ export default function Home() {
   const today = daily[todayKey()] || { answered: 0, correct: 0 };
   const rate = today.answered ? Math.round((today.correct / today.answered) * 100) : null;
   const noteCount = words.filter((w) => w.note.inNote).length;
+  const studyable = words.filter(hasMeaning).length;
+  const incomplete = words.filter(isIncomplete).length;
 
   return (
     <div className="home">
@@ -45,7 +47,7 @@ export default function Home() {
       )}
 
       <div className="home-actions">
-        <button className="btn primary block big" disabled={words.length === 0} onClick={() => navigate('/study')}>
+        <button className="btn primary block big" disabled={studyable === 0} onClick={() => navigate('/study')}>
           학습 시작
         </button>
         <button className="btn block big" disabled={noteCount === 0} onClick={() => navigate('/study?mode=note')}>
@@ -59,6 +61,11 @@ export default function Home() {
             일괄 추가
           </a>
         </div>
+        {incomplete > 0 && (
+          <a className="link-btn" href="#/autofill">
+            미완성 단어 {incomplete}개 자동 채우기 →
+          </a>
+        )}
       </div>
     </div>
   );

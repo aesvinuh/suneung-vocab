@@ -32,6 +32,10 @@ suneung-vocab/
    │  ├─ inflect.js          활용형(-s/-ed/-ing…) 인식, 빈칸·밑줄 처리
    │  ├─ grading.js          채점 결과를 기록·오답 노트에 반영
    │  ├─ explain.js          오답 해설 생성 (Claude API 연결 지점)
+│  ├─ dictionary.js       사전 조회 (Merriam-Webster → Free Dictionary)
+│  ├─ aiFill.js           Claude로 한국어 뜻·뉘앙스·해석 생성
+│  ├─ autofill.js         자동 채우기 흐름, 빈 칸만 병합
+│  ├─ apiKeys.js          API 키 (브라우저 localStorage)
    │  ├─ parse.js            일괄 추가 텍스트 파서
    │  ├─ backup.js           JSON 내보내기/불러오기
    │  ├─ word.js             단어 데이터 구조, 공통 함수
@@ -55,9 +59,11 @@ IndexedDB `suneung-vocab`에 저장소(object store)가 2개 있습니다.
   pos: 'adj',                              // n v adj adv prep conj phr
   tone: 'negative',                        // positive | negative | neutral | '' (뉘앙스 문제용)
   nuance: '약한 부정. 하기 싫어서 꺼림…',   // 자유 메모
+  definition: 'not willing to do …',        // 영영 뜻풀이 (자동 채우기)
   example: 'Many residents were reluctant to …',
   exampleKo: '많은 주민들이 … 꺼렸다.',
   synonyms: ['hesitant'], antonyms: ['willing'],
+  sources: { meanings: 'ai', example: 'mw' }, // 칸별 출처 (mw | fd | ai | user)
   createdAt, updatedAt,                    // 자동
   stats: {                                 // 자동
     shown, correct, wrong,                 // 출제·정답·오답 횟수
@@ -134,20 +140,59 @@ IndexedDB `suneung-vocab`에 저장소(object store)가 2개 있습니다.
   ```
   뒤쪽 칸은 비워도 되고, `| 품사 | 유의어 | 반의어`를 더 붙일 수 있습니다. 엑셀/구글시트에서 복사한 탭 구분도 됩니다. 이미 있는 단어는 건너뜁니다.
 
-## 7. 백업
+## 7. 단어 자동 채우기
+
+단어 추가 화면에서 영어 단어만 쓰고 **자동 채우기**를 누르면:
+
+1. **Merriam-Webster Learner's** 사전에서 품사·영영 뜻풀이·예문·유의어를 가져옵니다.
+2. 없거나 실패하면 **Free Dictionary**(dictionaryapi.dev, 키 불필요)로 대체합니다. MW에 유의어/반의어가 없을 때도 Free Dictionary로 보충합니다.
+3. 뜻이 여러 개면 목록에서 **외울 뜻을 고릅니다**(여러 개 가능).
+4. 고른 영영 뜻풀이와 예문을 **Claude API**(`claude-opus-5-5`)에 보내 한국어 뜻, 뉘앙스 메모, 예문 해석을 만듭니다.
+   프롬프트는 "사전 자료를 근거로만 쓰고 없는 뜻을 만들지 말 것"을 지시합니다. 사전에 예문이 없을 때만 AI가 예문을 씁니다.
+5. 바로 저장하지 않고 **미리보기**에 보여 줍니다. 칸마다 출처(Merriam-Webster / Free Dictionary / AI 생성)가 붙고, 고친 칸은 '직접 입력'으로 바뀝니다.
+
+- 인터넷이 끊기면 버튼이 '오프라인'으로 바뀌고 직접 입력만 됩니다.
+- **미완성 단어 일괄 자동 채우기**: 뜻 없이 단어만 추가해 두면 '미완성'이 됩니다(뜻·뉘앙스·예문 중 하나라도 비면 미완성).
+  단어 목록이나 홈의 링크 → 한 번에 최대 20개 → 뜻 고르기 → 미리보기에서 확인 후 저장. **비어 있는 칸만 채우고 직접 쓴 내용은 덮어쓰지 않습니다.**
+- 뜻이 없는 단어는 출제되지 않습니다.
+- 사용한 Claude 요청은 Anthropic 콘솔 계정에 사용량만큼 청구됩니다(단어 1개당 요청 1번). Merriam-Webster는 비상업용 무료(하루 1,000회)입니다.
+- 관련 코드: `src/lib/dictionary.js`(사전), `src/lib/aiFill.js`(Claude), `src/lib/autofill.js`(흐름·병합 규칙).
+
+### API 키 관리
+
+- 설정 → **자동 채우기 API 키**에 입력합니다. 키는 **그 기기 그 브라우저의 localStorage에만** 저장됩니다.
+- 코드에 키를 넣지 않으므로 GitHub에 올라갈 일이 없고, JSON 백업 파일에도 포함되지 않습니다. 폰·컴퓨터(아이폰은 홈 화면 앱도)에서 각각 입력하세요.
+- '확인' 버튼으로 키가 맞는지 확인할 수 있습니다(Claude 키 확인은 요금이 들지 않는 모델 정보 조회).
+- 이 페이지를 열 수 있는 다른 사람이 키를 볼 수는 없지만, **본인 폰에 저장된 키는 그 폰을 쓰는 사람이 볼 수 있습니다.** 공용 기기에는 넣지 마세요.
+
+### 왜 중계 서버(Vercel) 없이 되나요?
+
+브라우저는 다른 사이트의 API를 부를 때, 그 API가 응답에 "이 사이트에서 불러도 된다"는 허가(CORS 헤더)를 주는지 확인합니다. 2026-10-24에 직접 확인한 결과:
+
+| API | CORS | 결과 |
+|---|---|---|
+| Merriam-Webster (`dictionaryapi.com`) | `Access-Control-Allow-Origin: *` | 브라우저에서 바로 호출 가능 |
+| Free Dictionary (`dictionaryapi.dev`) | 원래 `*` 허용. 확인한 날은 서비스 장애(오류 530) | 바로 호출. 장애 시 MW 결과만 사용 |
+| Claude (`api.anthropic.com`) | `anthropic-dangerous-direct-browser-access` 헤더를 보내면 허용 | 바로 호출 (SDK `dangerouslyAllowBrowser`) |
+
+그래서 Vercel 서버리스 함수는 필요 없습니다. Anthropic이 브라우저 직접 호출에 "dangerous"라는 이름을 붙인 이유는, 키를 웹페이지 코드에 박아 두면 누구나 훔쳐 갈 수 있기 때문입니다.
+이 앱은 키를 코드에 넣지 않고 **본인이 본인 기기에 입력**하는 방식이라 그 위험이 없습니다.
+나중에 다른 사람도 쓰게 하면서 내 키를 숨겨야 한다면, 그때는 Vercel 같은 서버에 키를 두고 중계해야 합니다.
+
+## 8. 백업
 
 설정 → **JSON으로 내보내기 / 불러오기**. 불러올 때 '합치기'(같은 단어는 건너뜀) 또는 '전체 교체'를 고를 수 있습니다.
 데이터는 그 기기의 그 브라우저에만 있으니, 폰을 바꾸거나 크롬 데이터를 지우기 전에 꼭 내보내 두세요.
 (배포 주소가 바뀌어도 데이터는 옮겨지지 않습니다. 내보내기 → 새 주소에서 불러오기)
 
-## 8. Claude API 해설 붙이기 (나중에)
+## 9. Claude API 해설 붙이기 (나중에)
 
 `src/lib/explain.js`의 `fetchContextNote()`만 구현하면 해설 화면에 '문맥 해설'이 표시됩니다.
 API 키를 브라우저 코드에 넣으면 누구나 볼 수 있으므로, Cloudflare Workers 같은 무료 프록시에 키를 두고 그 주소를 호출하는 방식을 권장합니다(파일 안에 예시 주석이 있습니다).
 
 ---
 
-## 9. 내 컴퓨터에서 실행
+## 10. 내 컴퓨터에서 실행
 
 ### 가장 쉬운 방법: 더블클릭
 
@@ -157,7 +202,7 @@ macOS에서 `실행하기.command`를 더블클릭하면 고정 포트(5180)로 
 - **Node.js가 없어도 됩니다.** 빌드된 앱(`dist` 폴더)이 함께 들어 있어서 macOS 기본 `python3`만으로 실행됩니다.
 - Node.js가 설치되어 있고 `src`를 고쳤다면 실행할 때 자동으로 다시 빌드합니다.
 - 실행 창에 `같은 와이파이의 폰에서 열기: http://192.168.x.x:5180/` 주소가 나옵니다. 집에서 폰으로 바로 써 볼 때 사용하세요.
-  밖에서(대중교통에서) 쓰려면 아래 10번처럼 인터넷에 배포해야 합니다.
+  밖에서(대중교통에서) 쓰려면 아래 11번처럼 인터넷에 배포해야 합니다.
 - 서버를 끄려면 `종료하기.command`를 더블클릭하세요. 꺼도 단어 데이터는 그대로 남습니다.
 
 ⚠️ **최초 1회는 터미널에서 실행 권한을 줘야 합니다** (macOS는 다운로드/압축 해제된 스크립트를 기본적으로 실행 차단합니다):
@@ -183,7 +228,7 @@ npm run build      # dist/ 다시 만들기
 
 `npm run dev`의 주소(5173)는 `실행하기`의 주소(5180)와 포트가 달라서 단어 데이터가 따로 저장됩니다.
 
-## 10. 무료 배포: GitHub Pages (추천)
+## 11. 무료 배포: GitHub Pages (추천)
 
 이 저장소에는 자동 배포 설정(`.github/workflows/deploy.yml`)이 이미 들어 있습니다.
 
@@ -210,7 +255,7 @@ npm run build      # dist/ 다시 만들기
 
 이후에는 코드를 고치고 `git push`만 하면 자동으로 다시 배포됩니다. 배포해도 폰에 저장된 단어는 그대로 남습니다.
 
-## 11. 무료 배포: Vercel (대안)
+## 12. 무료 배포: Vercel (대안)
 
 1. 위 1~3단계처럼 GitHub에 코드를 올립니다.
 2. [vercel.com](https://vercel.com)에서 **Continue with GitHub**로 가입합니다.

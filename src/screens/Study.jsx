@@ -5,7 +5,7 @@ import { pickNextWord } from '../lib/weights.js';
 import { buildQuestion, TYPE_LABEL } from '../lib/questions.js';
 import { applyAnswer } from '../lib/grading.js';
 import { buildExplanation, summarize } from '../lib/explain.js';
-import { POS_LABEL } from '../lib/word.js';
+import { hasMeaning, POS_LABEL } from '../lib/word.js';
 import { navigate } from '../lib/router.js';
 
 const CORRECT_DELAY = 750; // 정답 표시 후 다음 문제까지(ms)
@@ -25,7 +25,7 @@ export default function Study({ mode }) {
 
   const next = useCallback(() => {
     clearTimeout(timerRef.current);
-    const all = wordsRef.current;
+    const all = wordsRef.current.filter(hasMeaning); // 미완성(뜻 없음) 단어는 출제하지 않음
     const pool = mode === 'note' ? all.filter((w) => w.note.inNote) : all;
     const word = pickNextWord(pool, { recentIds: recentRef.current, mode });
     setChosen(null);
@@ -51,7 +51,7 @@ export default function Study({ mode }) {
       if (lockRef.current || !cur) return;
       lockRef.current = true;
       const { q } = cur;
-      const all = wordsRef.current;
+      const all = wordsRef.current.filter(hasMeaning);
       const fresh = all.find((w) => w.id === cur.word.id) || cur.word;
 
       const isSelf = q.type === 'self';

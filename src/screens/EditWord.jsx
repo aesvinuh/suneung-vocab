@@ -10,12 +10,12 @@ export default function EditWord({ id }) {
   const word = words.find((w) => w.id === id);
   if (!word) return <><PageHeader title="단어" back="/words" /><p className="empty">삭제되었거나 없는 단어예요.</p></>;
 
-  const submit = async (f) => {
+  const submit = async (f, sources) => {
     if (words.some((w) => w.id !== id && sameWord(w.word, f.word))) {
       alert('같은 단어가 이미 있어요.');
       return false;
     }
-    await saveWord({ ...word, ...f });
+    await saveWord({ ...word, ...f, sources: { ...word.sources, ...sources } });
     goBack('/words');
   };
 
@@ -30,7 +30,7 @@ export default function EditWord({ id }) {
   return (
     <>
       <PageHeader title="단어 수정" back="/words" />
-      <WordForm key={word.id} initial={word} onSubmit={submit} submitLabel="저장" defaultOpen />
+      <WordForm key={word.id} initial={word} sources={word.sources} onSubmit={submit} submitLabel="저장" defaultOpen requireMeaning={false} />
       <section className="meta-box">
         <p>
           추가 {new Date(word.createdAt).toLocaleDateString()} · 출제 {s.shown} · 정답 {s.correct} · 오답 {s.wrong}

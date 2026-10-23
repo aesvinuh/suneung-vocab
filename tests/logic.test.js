@@ -79,8 +79,9 @@ test('오답 노트 등록과 졸업', () => {
 
 test('일괄 추가 파싱', () => {
   const { rows, errors } = parseBulk('a | 뜻1, 뜻2 | 긍정 | ex | 해석\n# 주석\nreluctant | 꺼리는\nbad line\n', words);
-  assert.equal(rows.length, 2);
+  assert.equal(rows.length, 3); // 'bad line'은 단어만 있는 미완성 줄로 인식
   assert.equal(rows[1].duplicate, true);
-  assert.equal(errors.length, 1);
+  assert.equal(errors.length, 0);
+  assert.deepEqual(normalizeWord(rows[2].data).meanings, []);
   assert.deepEqual(normalizeWord(rows[0].data).meanings, ['뜻1', '뜻2']);
 });

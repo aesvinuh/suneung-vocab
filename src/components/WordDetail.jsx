@@ -30,6 +30,7 @@ export default function WordDetail({ word, showExample = true, children }) {
       </div>
       <p className="detail-meaning">{word.meanings.join(', ')}</p>
       {word.nuance && <p className="detail-nuance">{word.nuance}</p>}
+      {word.definition && <p className="detail-def">{word.definition}</p>}
       {showExample && word.example && (
         <div className="detail-example">
           <p className="en">
