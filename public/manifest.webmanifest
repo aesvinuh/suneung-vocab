@@ -1,0 +1,11 @@
+{
+  "name": "수능 영단어 뉘앙스 암기",
+  "short_name": "수능 단어",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f3ef",
+  "theme_color": "#f4f3ef",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
