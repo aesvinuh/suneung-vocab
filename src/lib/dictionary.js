@@ -1,5 +1,9 @@
-// 사전 조회: Merriam-Webster Learner's → 실패하면 Free Dictionary.
-// 두 API 모두 Access-Control-Allow-Origin: * 이라 브라우저에서 바로 호출 가능 (중계 서버 불필요).
+// 사전 조회: 여러 사전을 동시에 조회해 근거 자료를 모은다 (lookupAll).
+//  - Merriam-Webster Learner's (학습자용, 키 필요)
+//  - Wiktionary 영어판 (키 불필요, 수록 단어 많음)
+//  - Free Dictionary (키 불필요, 가끔 장애)
+//  - Datamuse (유의어·반의어)
+// 모두 브라우저 직접 호출(CORS) 허용 → 중계 서버 불필요.
 //
 // 결과 형식:
 // { source: 'mw'|'fd', senses: [{ id, pos, definition, examples[] }],
@@ -7,6 +11,8 @@
 
 const MW_URL = 'https://www.dictionaryapi.com/api/v3/references/learners/json/';
 const FD_URL = 'https://api.dictionaryapi.dev/api/v2/entries/en/';
+const WIKT_URL = 'https://en.wiktionary.org/api/rest_v1/page/definition/';
+const DM_URL = 'https://api.datamuse.com/words?max=10&';
 const MAX_SENSES = 8;
 const MAX_REL = 6;
 
@@ -15,40 +21,6 @@ export class LookupError extends Error {
     super(message);
     this.notFound = notFound;
   }
-}
-
-export async function lookupDictionary(word, { mwKey } = {}) {
-  const w = word.trim();
-  const errors = [];
-  let result = null;
-
-  if (mwKey) {
-    try {
-      result = await lookupMw(w, mwKey);
-    } catch (e) {
-      errors.push(e);
-    }
-  }
-  // 유의어/반의어가 비었거나 MW 실패 시 Free Dictionary로 보충
-  if (!result || result.synonyms.length === 0 || result.antonyms.length === 0) {
-    try {
-      const fd = await lookupFd(w);
-      if (!result) result = fd;
-      else if (fd.synonyms.length || fd.antonyms.length) {
-        result = {
-          ...result,
-          synonyms: result.synonyms.length ? result.synonyms : fd.synonyms,
-          antonyms: result.antonyms.length ? result.antonyms : fd.antonyms,
-          relSource: result.synonyms.length ? result.relSource : 'fd',
-        };
-      }
-    } catch (e) {
-      errors.push(e);
-    }
-  }
-  if (result) return result;
-  if (errors.length && errors.every((e) => e.notFound)) throw new LookupError(`'${w}'를 사전에서 찾지 못했어요.`, { notFound: true });
-  throw new LookupError(errors.map((e) => e.message).join(' / ') || '사전 조회에 실패했어요.');
 }
 
 // ── Merriam-Webster Learner's ──────────────────────────────
@@ -202,3 +174,110 @@ const POS_MAP = {
   'phrasal verb': 'phr', idiom: 'phr', phrase: 'phr',
 };
 export const mapPos = (fl) => POS_MAP[String(fl).toLowerCase()] || '';
+
+// ── Wiktionary 영어판 (키 불필요) ─────────────────────────────
+
+export async function lookupWiktionary(word) {
+  let res;
+  try {
+    res = await fetch(WIKT_URL + encodeURIComponent(word.trim().toLowerCase()));
+  } catch {
+    throw new LookupError('Wiktionary에 연결하지 못했어요.');
+  }
+  if (res.status === 404) throw new LookupError('Wiktionary에 없는 단어예요.', { notFound: true });
+  if (!res.ok) throw new LookupError(`Wiktionary 오류 (${res.status}).`);
+  return parseWiktionary(await res.json());
+}
+
+const stripHtml = (s = '') =>
+  s
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+
+export function parseWiktionary(data) {
+  const senses = [];
+  for (const block of data?.en || []) {
+    for (const d of block.definitions || []) {
+      const definition = stripHtml(d.definition);
+      if (!definition || senses.length >= MAX_SENSES) continue;
+      const examples = (d.parsedExamples?.map((x) => x.example) || d.examples || []).map(stripHtml).filter(Boolean).slice(0, 2);
+      senses.push({ id: 'wk' + senses.length, pos: block.partOfSpeech.toLowerCase(), definition, examples });
+    }
+  }
+  if (!senses.length) throw new LookupError('Wiktionary에 영어 뜻이 없어요.', { notFound: true });
+  return { source: 'wikt', senses, synonyms: [], antonyms: [], relSource: null };
+}
+
+// ── Datamuse (유의어·반의어, 키 불필요) ───────────────────────
+
+export async function lookupDatamuse(word) {
+  const q = encodeURIComponent(word.trim().toLowerCase());
+  const get = async (rel) => {
+    try {
+      const r = await fetch(`${DM_URL}${rel}=${q}`);
+      return r.ok ? (await r.json()).map((x) => x.word) : [];
+    } catch {
+      return [];
+    }
+  };
+  const [synonyms, antonyms] = await Promise.all([get('rel_syn'), get('rel_ant')]);
+  return { synonyms: synonyms.slice(0, MAX_REL), antonyms: antonyms.slice(0, MAX_REL) };
+}
+
+// ── 종합 조회 ─────────────────────────────────────────────
+
+/**
+ * 모든 사전을 동시에 조회해 하나로 모은다.
+ * @returns {{ senses: Array<{id, source, pos, definition, examples}>, synonyms: Array<{word, source}>,
+ *            antonyms: Array<{word, source}>, found: string[], failed: string[] }}
+ */
+export async function lookupAll(word, { mwKey } = {}) {
+  const w = word.trim();
+  const jobs = [
+    ['mw', mwKey ? lookupMw(w, mwKey) : Promise.reject(new LookupError('키 없음', { notFound: true }))],
+    ['wikt', lookupWiktionary(w)],
+    ['fd', lookupFd(w)],
+  ];
+  const [results, dm] = await Promise.all([Promise.allSettled(jobs.map(([, p]) => p)), lookupDatamuse(w)]);
+
+  const senses = [];
+  const synonyms = [];
+  const antonyms = [];
+  const found = [];
+  const failed = [];
+  results.forEach((r, i) => {
+    const source = jobs[i][0];
+    if (r.status !== 'fulfilled') {
+      if (!r.reason?.notFound) failed.push(source);
+      return;
+    }
+    found.push(source);
+    for (const s of r.value.senses) senses.push({ ...s, source });
+    r.value.synonyms.forEach((x) => synonyms.push({ word: x, source }));
+    r.value.antonyms.forEach((x) => antonyms.push({ word: x, source }));
+  });
+  dm.synonyms.forEach((x) => synonyms.push({ word: x, source: 'dm' }));
+  dm.antonyms.forEach((x) => antonyms.push({ word: x, source: 'dm' }));
+
+  if (!senses.length) {
+    if (failed.length) throw new LookupError('사전에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.');
+    throw new LookupError(`'${w}'를 사전에서 찾지 못했어요.`, { notFound: true });
+  }
+  const target = w.toLowerCase();
+  // 유의어 품질 순: MW(편집) → Datamuse(WordNet 기반, 흔한 순) → 나머지
+  const order = { mw: 0, dm: 1, fd: 2, wikt: 3 };
+  const dedupe = (list) => {
+    const seen = new Set([target]);
+    return [...list]
+      .sort((a, b) => order[a.source] - order[b.source])
+      .filter((x) => !seen.has(x.word.toLowerCase()) && seen.add(x.word.toLowerCase()));
+  };
+  return { senses, synonyms: dedupe(synonyms), antonyms: dedupe(antonyms), found, failed };
+}

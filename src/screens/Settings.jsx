@@ -170,9 +170,9 @@ function ApiKeys() {
         {status.save && <small className="hint">{status.save}</small>}
       </div>
       <ul className="help">
-        <li>영영 뜻풀이·예문은 사전에서 가져오고, 한국어 뜻·뉘앙스·예문 해석은 AI가 그 사전 내용을 근거로 정리해요.</li>
+        <li>Merriam-Webster·Wiktionary·Free Dictionary·Datamuse를 함께 찾고, AI가 그 내용을 종합해 한국어 뜻·뉘앙스·예문 해석을 정리해요. 예문은 사전에 실린 문장을 그대로 써요.</li>
         <li>
-          Merriam-Webster: <a href="https://dictionaryapi.com/register/index" target="_blank" rel="noreferrer">dictionaryapi.com 가입</a> → 'Request API Key 1'에서 <b>Merriam-Webster's Learner's Dictionary</b>를 고르면 키가 나와요. 없으면 Free Dictionary만 써요.
+          Merriam-Webster: <a href="https://dictionaryapi.com/register/index" target="_blank" rel="noreferrer">dictionaryapi.com 가입</a> → 'Request API Key 1'에서 <b>Merriam-Webster's Learner's Dictionary</b>를 고르면 키가 나와요. 없어도 나머지 사전으로 찾아요.
         </li>
         <li>
           Claude: <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">console.anthropic.com</a> → API Keys → Create Key. 결제 수단 등록이 필요해요. 없으면 영영 뜻·예문·유의어만 채워지고 한국어 뜻·뉘앙스는 직접 써야 해요.

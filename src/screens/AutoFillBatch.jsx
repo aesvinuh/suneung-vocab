@@ -136,7 +136,7 @@ export default function AutoFillBatch() {
 
       {phase === 'choose' && (
         <section className="stack">
-          <p className="hint">뜻이 여러 개인 단어는 외울 뜻을 골라 주세요. 기본으로 첫 번째 뜻이 골라져 있어요.</p>
+          <p className="hint">여러 사전의 뜻을 모아 정리했어요. 단어마다 외울 뜻을 골라 주세요. 기본으로 첫 번째 뜻이 골라져 있어요.</p>
           {items.map((it) =>
             it.error ? (
               <p key={it.id} className="notice bad">

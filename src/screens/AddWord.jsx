@@ -34,7 +34,7 @@ export default function AddWord() {
       return;
     }
     setError(null);
-    setStep({ kind: 'loading', msg: `'${word}' 사전 검색하고 뜻 정리하는 중…` });
+    setStep({ kind: 'loading', msg: `'${word}' 여러 사전을 찾아 뜻을 정리하는 중…` });
     try {
       const res = await lookup(word);
       const choices = choicesOf(res);
@@ -90,7 +90,7 @@ export default function AddWord() {
 
       {step.kind === 'choose' && (
         <section className="stack">
-          <p className="hint">뜻이 여러 개예요. 외울 뜻을 골라 주세요. (여러 개 가능, 처음 고른 뜻이 대표 뜻)</p>
+          <p className="hint">여러 사전의 뜻을 모아 정리했어요. 외울 뜻을 골라 주세요. (여러 개 가능)</p>
           <SenseChooser word={step.word} choices={step.choices} selected={step.selected} onChange={(selected) => setStep({ ...step, selected })} />
           <div className="sticky-actions">
             <button className="btn primary block" disabled={!step.selected.length} onClick={() => makeDraft(step.word, step.res, step.selected)}>

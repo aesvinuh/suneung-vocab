@@ -1,62 +1,105 @@
-// 자동 채우기 흐름: 영영 사전 조회 → (AI가 뜻 목록을 한국어로) → 뜻 선택 → AI 해설 → 미리보기용 초안
-//  - 품사·영영 뜻·예문·유의어: Merriam-Webster → Free Dictionary
-//  - 한국어 뜻·뉘앙스 메모·감정 톤·예문 해석: AI가 위 사전 자료를 근거로 작성
-import { lookupDictionary, mapPos } from './dictionary.js';
-import { generateKorean, translateSenses } from './aiFill.js';
+// 자동 채우기 흐름
+//  1. 여러 사전 동시 조회 (Merriam-Webster · Wiktionary · Free Dictionary · Datamuse)
+//  2. AI가 모든 뜻풀이를 종합해 한국어 뜻 목록으로 정리 (같은 뜻 합치기, 근거 사전 표시)
+//  3. 외울 뜻 선택
+//  4. AI가 고른 뜻과 근거 자료로 뉘앙스 메모·감정 톤·예문 해석 작성 → 미리보기용 초안
+// Claude 키가 없으면 대표 사전의 영영 뜻풀이로 고르고, 사전 내용만 채운다.
+import { lookupAll, mapPos } from './dictionary.js';
+import { generateKorean, synthesizeMeanings } from './aiFill.js';
 import { findTarget } from './inflect.js';
 import { getKeys } from './apiKeys.js';
 import { POS_LABEL, splitList } from './word.js';
 
 export const SOURCE_LABEL = {
   mw: 'Merriam-Webster',
+  wikt: 'Wiktionary',
   fd: 'Free Dictionary',
-  ai: 'AI 생성',
+  dm: 'Datamuse',
+  mix: '여러 사전',
+  ai: 'AI 종합',
   user: '직접 입력',
 };
+const SHORT = { mw: 'MW', wikt: 'Wiktionary', fd: 'FreeDict' };
+const PRIORITY = ['mw', 'wikt', 'fd']; // 공신력 순
 
 // 자동으로 채울 수 있는 칸
 export const FILL_FIELDS = ['pos', 'definition', 'meanings', 'tone', 'nuance', 'example', 'exampleKo', 'synonyms', 'antonyms'];
 
 /**
- * 사전 조회 + (뜻이 여러 개고 Claude 키가 있으면) 뜻 목록 한국어 번역
- * @returns {Promise<{ dict, glosses: Record<string,string>, glossError: string|null }>}
+ * @returns {Promise<{ all, merged: Array|null, mergeError: string|null }>}
+ *   all: lookupAll() 결과, merged: AI가 종합한 뜻 목록 [{ id, ko, pos, en, refs, example }]
  */
 export async function lookup(word) {
-  const dict = await lookupDictionary(word, { mwKey: getKeys().mw });
-  const res = { dict, glosses: {}, glossError: null };
+  const all = await lookupAll(word, { mwKey: getKeys().mw });
+  const res = { all, merged: null, mergeError: null };
   const { claude } = getKeys();
-  if (claude && dict.senses.length > 1) {
+  if (claude) {
     try {
-      const ko = await translateSenses(word, dict.senses, claude);
-      dict.senses.forEach((s, i) => (res.glosses[s.id] = ko[i]));
+      const m = await synthesizeMeanings(word, all.senses, claude);
+      if (m.length) res.merged = m.map((x, i) => ({ ...x, id: 'm' + i }));
     } catch (e) {
-      res.glossError = e.message; // 번역 실패해도 영어 목록으로 고르면 됨
+      res.mergeError = e.message + ' 사전 뜻풀이(영어)로 골라 주세요.';
     }
   }
   return res;
 }
 
-// 뜻 고르기 화면에 보여 줄 목록: 한국어 뜻(있으면)을 크게, 영영 뜻풀이를 작게
+// 대표 사전 하나의 뜻풀이 (AI 종합이 없을 때)
+function primarySenses(all) {
+  const src = PRIORITY.find((p) => all.senses.some((s) => s.source === p));
+  return all.senses.filter((s) => s.source === src);
+}
+
+// 뜻 고르기 화면에 보여 줄 목록
 export function choicesOf(res) {
+  if (res.merged) {
+    const byId = new Map(res.all.senses.map((s) => [s.id, s]));
+    return {
+      source: 'ai',
+      items: res.merged.map((m) => ({
+        id: m.id,
+        pos: POS_LABEL[mapPos(m.pos)] || m.pos,
+        text: m.ko,
+        sub: m.en,
+        ko: true,
+        refs: [...new Set(m.refs.map((r) => SHORT[byId.get(r)?.source]).filter(Boolean))],
+      })),
+    };
+  }
+  const senses = primarySenses(res.all);
   return {
-    source: res.dict.source,
-    items: res.dict.senses.map((s) => {
-      const ko = res.glosses[s.id];
-      return { id: s.id, pos: POS_LABEL[mapPos(s.pos)] || s.pos, text: ko || s.definition, sub: ko ? s.definition : s.examples[0], ko: !!ko };
-    }),
+    source: senses[0].source,
+    items: senses.map((s) => ({ id: s.id, pos: POS_LABEL[mapPos(s.pos)] || s.pos, text: s.definition, sub: s.examples[0] })),
   };
 }
 
+const relList = (list) => {
+  const words = list.slice(0, 6).map((x) => x.word);
+  const srcs = new Set(list.slice(0, 6).map((x) => x.source));
+  return { words, source: srcs.size > 1 ? 'mix' : [...srcs][0] };
+};
+
 /**
  * @param res lookup() 결과
- * @param selectedIds 외울 뜻으로 고른 sense id 목록 (첫 번째가 대표 뜻)
+ * @param selectedIds 외울 뜻으로 고른 id 목록
  * @returns {{ data, sources, warnings: string[] }}
  */
 export async function buildDraft(word, res, selectedIds) {
-  const { dict, glosses } = res;
-  const sel = dict.senses.filter((s) => selectedIds.includes(s.id));
-  const chosen = sel.length ? sel : dict.senses.slice(0, 1);
-  const src = dict.source;
+  const { all, merged } = res;
+  const byId = new Map(all.senses.map((s) => [s.id, s]));
+  const rank = (s) => PRIORITY.indexOf(s.source);
+
+  // 고른 뜻과 그 근거가 된 사전 뜻풀이
+  let chosenMerged = [];
+  let evidence;
+  if (merged) {
+    chosenMerged = merged.filter((m) => selectedIds.includes(m.id));
+    if (!chosenMerged.length) chosenMerged = merged.slice(0, 1);
+    evidence = [...new Set(chosenMerged.flatMap((m) => m.refs))].map((r) => byId.get(r)).filter(Boolean).sort((a, b) => rank(a) - rank(b));
+  } else {
+    evidence = all.senses.filter((s) => selectedIds.includes(s.id));
+    if (!evidence.length) evidence = primarySenses(all).slice(0, 1);
+  }
 
   const data = { word };
   const sources = {};
@@ -67,18 +110,29 @@ export async function buildDraft(word, res, selectedIds) {
     }
   };
 
-  put('pos', mapPos(chosen[0].pos), src);
-  put('definition', chosen.map((s) => s.definition).join(' / '), src);
-  put('synonyms', dict.synonyms, dict.relSource);
-  put('antonyms', dict.antonyms, dict.relSource);
-  // 빈칸 문제에 쓰려면 단어(활용형)가 들어 있는 예문이 좋다
-  const examples = chosen.flatMap((s) => s.examples);
-  put('example', examples.find((ex) => findTarget(ex, word)) || examples[0] || '', src);
-  // 뜻 고르기에서 본 한국어 뜻을 그대로 쓴다
-  put('meanings', [...new Set(chosen.flatMap((s) => splitList(glosses[s.id] || '')))].slice(0, 4), 'ai');
+  const lead = evidence[0];
+  put('pos', mapPos(chosenMerged[0]?.pos || lead.pos), chosenMerged.length ? 'ai' : lead.source);
+  // 영영 뜻풀이는 가장 공신력 있는 사전의 원문 그대로 (뜻마다 하나)
+  const defs = chosenMerged.length
+    ? chosenMerged.map((m) => m.refs.map((r) => byId.get(r)).filter(Boolean).sort((a, b) => rank(a) - rank(b))[0]).filter(Boolean)
+    : evidence;
+  put('definition', [...new Set(defs.map((s) => s.definition))].join(' / '), new Set(defs.map((s) => s.source)).size > 1 ? 'mix' : defs[0]?.source);
+
+  // 예문: AI가 고른 사전 예문 → 없으면 근거 뜻풀이의 예문 중 단어가 들어 있는 것
+  const exSource = (ex) => evidence.find((s) => s.examples.includes(ex))?.source || all.senses.find((s) => s.examples.includes(ex))?.source;
+  const candidates = [...chosenMerged.map((m) => m.example).filter(Boolean), ...evidence.flatMap((s) => s.examples)];
+  const example = candidates.find((ex) => findTarget(ex, word)) || candidates[0] || '';
+  put('example', example, exSource(example));
+
+  const syn = relList(all.synonyms);
+  const ant = relList(all.antonyms);
+  put('synonyms', syn.words, syn.source);
+  put('antonyms', ant.words, ant.source);
+  put('meanings', [...new Set(chosenMerged.flatMap((m) => splitList(m.ko)))].slice(0, 4), 'ai');
 
   const warnings = [];
-  if (res.glossError) warnings.push(res.glossError);
+  if (res.mergeError) warnings.push(res.mergeError);
+  if (all.failed.length) warnings.push(`${all.failed.map((s) => SOURCE_LABEL[s]).join(', ')}에 연결하지 못해 나머지 사전으로만 정리했어요.`);
   const { claude } = getKeys();
   if (!claude) {
     warnings.push('Claude API 키가 없어 한국어 뜻·뉘앙스·예문 해석은 채우지 못했어요. 직접 입력하거나 설정에서 키를 넣어 주세요.');
@@ -86,9 +140,22 @@ export async function buildDraft(word, res, selectedIds) {
   }
   try {
     const ai = await generateKorean(
-      { word, senses: chosen, koMeanings: data.meanings || [], synonyms: data.synonyms || [], example: data.example || '' },
+      {
+        word,
+        senses: evidence,
+        koMeanings: data.meanings || [],
+        synonyms: all.synonyms.slice(0, 15).map((x) => x.word),
+        antonyms: all.antonyms.slice(0, 10).map((x) => x.word),
+        example: data.example || '',
+      },
       claude,
     );
+    // 유의어·반의어: AI가 후보 중 고른 뜻에 맞는 것만 추림 (출처는 원래 사전)
+    for (const [field, list] of [['synonyms', all.synonyms], ['antonyms', all.antonyms]]) {
+      if (!ai[field].length) continue;
+      const srcs = new Set(ai[field].map((wd) => list.find((x) => x.word.toLowerCase() === wd.toLowerCase())?.source));
+      put(field, ai[field], srcs.size > 1 ? 'mix' : [...srcs][0]);
+    }
     if (!data.meanings) put('meanings', ai.meanings, 'ai');
     put('tone', ai.tone, 'ai');
     put('nuance', ai.nuance, 'ai');

@@ -30,7 +30,7 @@ suneung-vocab/
    │  ├─ inflect.js          활용형(-s/-ed/-ing…) 인식, 빈칸·밑줄 처리
    │  ├─ grading.js          채점 결과를 기록·오답 노트에 반영
    │  ├─ explain.js          오답 해설 생성 (Claude API 연결 지점)
-│  ├─ dictionary.js       사전 조회 (Merriam-Webster → Free Dictionary)
+│  ├─ dictionary.js       사전 동시 조회 (Merriam-Webster · Wiktionary · Free Dictionary · Datamuse)
 │  ├─ aiFill.js           Claude로 한국어 뜻·뉘앙스·해석 생성
 │  ├─ autofill.js         자동 채우기 흐름, 빈 칸만 병합
 │  ├─ apiKeys.js          API 키 (브라우저 localStorage)
@@ -153,16 +153,27 @@ IndexedDB `suneung-vocab`에 저장소(object store)가 2개 있습니다.
 
 단어 추가 화면에서 영어 단어만 쓰고 **자동 채우기**를 누르면:
 
-1. **Merriam-Webster Learner's** 사전에서 품사·영영 뜻풀이·예문·유의어를 가져옵니다. 없거나 실패하면 **Free Dictionary**(dictionaryapi.dev, 키 불필요)로 대체하고, 유의어/반의어가 비면 Free Dictionary로 보충합니다.
-2. 뜻이 여러 개면 **AI가 각 영영 뜻풀이를 짧은 한국어 뜻으로 옮긴 목록**을 보여 줍니다(한국어 뜻을 크게, 영어 원문을 작게). 외울 뜻을 고릅니다(여러 개 가능).
-3. 고른 뜻과 사전 자료를 **Claude API**(`claude-opus-5-5`)에 보내 뉘앙스 메모·감정 톤·예문 해석을 만듭니다. 뜻이 하나뿐이면 한국어 뜻도 이때 만듭니다.
-   프롬프트는 "사전 자료를 근거로만 쓰고 없는 뜻을 만들지 말 것"을 지시합니다. 사전에 예문이 없을 때만 AI가 예문을 씁니다.
-4. 바로 저장하지 않고 **미리보기**에 보여 줍니다. 칸마다 출처(Merriam-Webster / Free Dictionary / AI 생성)가 붙고, 고친 칸은 '직접 입력'으로 바뀝니다.
+1. **여러 사전을 동시에 조회**합니다.
+   | 사전 | 가져오는 것 | 키 |
+   |---|---|---|
+   | Merriam-Webster Learner's | 품사·뜻풀이·예문·유의어 (학습자용 편집 사전, 가장 우선) | 무료 키 필요 |
+   | Wiktionary 영어판 | 품사·뜻풀이·예문 (수록 단어가 많음) | 불필요 |
+   | Free Dictionary | 뜻풀이·예문·유의어·반의어 (가끔 장애 → 있으면 사용) | 불필요 |
+   | Datamuse | 유의어·반의어 (WordNet 기반) | 불필요 |
+2. **AI가 모든 뜻풀이를 종합**해 같은 뜻끼리 합치고, 고어·전문용어는 빼고, 수능에 자주 나오는 순서로 **한국어 뜻 목록**을 만듭니다. 각 뜻에 근거 사전이 표시됩니다. 외울 뜻을 고릅니다(여러 개 가능).
+3. AI가 고른 뜻과 근거 자료로 **뉘앙스 메모·감정 톤·예문 해석**을 쓰고, 모아 둔 유의어/반의어 후보 중 그 뜻에 맞는 흔한 단어만 고릅니다.
+4. 바로 저장하지 않고 **미리보기**에 보여 줍니다. 칸마다 출처가 붙고, 고친 칸은 '직접 입력'으로 바뀝니다.
 
-- 단어 칸 아래 **네이버 영어사전에서 보기 ↗** 링크로 그 단어의 네이버 사전 페이지를 새 탭으로 열어 AI가 정리한 뜻을 대조할 수 있습니다.
+AI가 지어내지 못하게 막는 장치:
+- 영영 뜻풀이 칸은 사전 원문 그대로(공신력 순: MW → Wiktionary → Free Dictionary).
+- 예문은 사전에 실린 문장만 인정합니다. AI가 고른 예문이 사전에 없으면 버립니다(사전 예문이 하나도 없을 때만 AI가 새로 쓰고 'AI 종합'으로 표시).
+- 근거 번호가 없는 뜻, 후보에 없는 유의어/반의어는 버립니다.
+
+- Claude 키가 없으면 대표 사전(MW → Wiktionary → Free Dictionary 순)의 영어 뜻풀이로 고르고, 사전 내용만 채웁니다.
+- 단어 칸 아래 **네이버 영어사전에서 보기 ↗** 링크로 네이버 사전 페이지를 새 탭으로 열어 대조할 수 있습니다.
   네이버는 공개 사전 API가 없어(내부 주소는 브라우저 호출이 막혀 있고 약관상 자동 수집도 허용되지 않음) 링크로만 연결합니다.
-- 한국어 뜻은 처음에 위키낱말사전(영한)에서 가져왔지만, 오타·어색한 뜻·빠진 단어가 많아 공신력 있는 영영사전 + AI 번역으로 바꿨습니다.
-- Claude 요청은 뜻이 여러 개인 단어는 2번(뜻 목록 번역 + 해설), 하나인 단어는 1번입니다.
+- 한국어 뜻을 위키낱말사전(영한)에서 가져오던 방식은 오타·어색한 뜻·빠진 단어가 많아 없앴습니다.
+- Claude 요청은 단어마다 2번(뜻 종합 + 해설)입니다.
 - 인터넷이 끊기면 버튼이 '오프라인'으로 바뀌고 직접 입력만 됩니다.
 - **미완성 단어 일괄 자동 채우기**: 뜻 없이 단어만 추가해 두면 '미완성'이 됩니다(뜻·뉘앙스·예문 중 하나라도 비면 미완성).
   단어 목록이나 홈의 링크 → 한 번에 최대 20개 → 뜻 고르기 → 미리보기에서 확인 후 저장. **비어 있는 칸만 채우고 직접 쓴 내용은 덮어쓰지 않습니다.**
@@ -184,7 +195,9 @@ IndexedDB `suneung-vocab`에 저장소(object store)가 2개 있습니다.
 | API | CORS | 결과 |
 |---|---|---|
 | Merriam-Webster (`dictionaryapi.com`) | `Access-Control-Allow-Origin: *` | 브라우저에서 바로 호출 가능 |
-| Free Dictionary (`dictionaryapi.dev`) | 원래 `*` 허용. 확인한 날은 서비스 장애(오류 530) | 바로 호출. 장애 시 MW 결과만 사용 |
+| Free Dictionary (`dictionaryapi.dev`) | `*` 허용 (장애가 잦음) | 바로 호출. 장애 시 나머지 사전만 사용 |
+| Wiktionary 영어판 (`en.wiktionary.org/api/rest_v1`) | `*` 허용 | 바로 호출 |
+| Datamuse (`api.datamuse.com`) | 요청한 사이트 허용 | 바로 호출 |
 | 네이버 영어사전 | 공개 API 없음, CORS 허용 안 함 | 자동 조회 불가 → 사전 페이지 링크만 제공 |
 | Claude (`api.anthropic.com`) | `anthropic-dangerous-direct-browser-access` 헤더를 보내면 허용 | 바로 호출 (SDK `dangerouslyAllowBrowser`) |
 
