@@ -34,7 +34,7 @@ export default function AddWord() {
       return;
     }
     setError(null);
-    setStep({ kind: 'loading', msg: `'${word}' 사전 검색 중…` });
+    setStep({ kind: 'loading', msg: `'${word}' 사전 검색하고 뜻 정리하는 중…` });
     try {
       const res = await lookup(word);
       const choices = choicesOf(res);
@@ -47,7 +47,7 @@ export default function AddWord() {
   };
 
   const makeDraft = async (word, res, selected) => {
-    setStep({ kind: 'loading', msg: getKeys().claude ? 'AI가 뉘앙스 메모를 정리하는 중…' : '정리하는 중…' });
+    setStep({ kind: 'loading', msg: getKeys().claude ? 'AI가 한국어 뜻과 뉘앙스를 정리하는 중…' : '정리하는 중…' });
     const draft = await buildDraft(word, res, selected);
     setStep({ kind: 'preview', ...draft });
   };

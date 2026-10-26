@@ -97,7 +97,7 @@ export default function AutoFillBatch() {
           <p className="hint">
             뜻·뉘앙스·예문 중 비어 있는 칸만 채워요. 직접 쓴 내용은 덮어쓰지 않아요. 한 번에 최대 {MAX_PER_RUN}개.
           </p>
-          {!hasClaude && <p className="notice bad">Claude API 키가 없어 사전 내용(한국어 뜻·영영 뜻·예문·유의어)만 채워져요. 뉘앙스 메모까지 채우려면 설정에서 키를 넣어 주세요.</p>}
+          {!hasClaude && <p className="notice bad">Claude API 키가 없어 영영 뜻·예문·유의어만 채워져요. 한국어 뜻·뉘앙스까지 채우려면 설정에서 키를 넣어 주세요.</p>}
           {!online && <p className="notice bad">오프라인이에요. 인터넷에 연결되면 쓸 수 있어요.</p>}
           {incomplete.length === 0 ? (
             <p className="empty">미완성 단어가 없어요.</p>
@@ -130,7 +130,7 @@ export default function AutoFillBatch() {
 
       {(phase === 'fetching' || phase === 'generating') && (
         <p className="loading">
-          {phase === 'fetching' ? '사전 검색 중' : 'AI가 한국어 해설 작성 중'} {progress.done}/{progress.total}
+          {phase === 'fetching' ? '사전 검색·뜻 정리 중' : 'AI가 한국어 해설 작성 중'} {progress.done}/{progress.total}
         </p>
       )}
 
@@ -148,7 +148,7 @@ export default function AutoFillBatch() {
           )}
           <div className="sticky-actions">
             <button className="btn primary block" onClick={() => runGenerate(items)}>
-              다음: {hasClaude ? 'AI로 뉘앙스 채우기' : '미리보기'}
+              다음: {hasClaude ? 'AI로 한국어 해설 채우기' : '미리보기'}
             </button>
           </div>
         </section>
