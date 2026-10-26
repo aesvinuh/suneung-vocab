@@ -13,8 +13,7 @@
 
 ```
 suneung-vocab/
-├─ 실행하기.command        더블클릭하면 배포 주소를 크롬 앱 창으로 열기 (macOS)
-├─ dist/                   빌드된 앱
+├─ mac/                    Dock 앱 '수능 단어' 소스와 아이콘 (다시 만드는 법은 mac/README.md)
 ├─ index.html
 ├─ vite.config.js            base: './' (GitHub Pages 하위 경로 대응)
 ├─ .github/workflows/deploy.yml   main에 push하면 GitHub Pages 자동 배포
@@ -231,11 +230,10 @@ API 키를 브라우저 코드에 넣으면 누구나 볼 수 있으므로, Clou
 컴퓨터에서도 폰과 같은 주소(https://aesvinuh.github.io/suneung-vocab/)를 씁니다. 서버를 켜고 끌 필요가 없고, 데이터는 GitHub 동기화로 폰과 맞춰집니다.
 
 - **Dock의 '수능 단어' 아이콘**(`~/Applications/수능 단어.app`)을 누르면 크롬 '앱 창'(주소창·탭 없음)으로 열립니다. 크롬이 없으면 기본 브라우저로 엽니다.
-- `실행하기.command`를 더블클릭해도 같은 동작을 합니다.
 - Dock에서 아이콘이 사라졌다면: Finder → 이동 → 홈 → 응용 프로그램 폴더의 '수능 단어'를 Dock으로 끌어다 놓으세요.
 - 앱 창은 일반 크롬과 같은 저장소를 쓰므로, 크롬 탭으로 열어도 같은 단어가 보입니다.
 
-> 예전 방식(내 컴퓨터에서 `dist` 폴더를 python3 서버로 띄우는 `localhost:5180`)은 없앴습니다. 그 주소에 넣어 둔 단어는 GitHub 동기화를 켜서 옮기거나 JSON 백업으로 옮기세요.
+> 예전 방식(`실행하기.command`로 띄우던 `localhost:5180`)은 없앴습니다.
 
 ### 수동 실행 (개발용)
 
