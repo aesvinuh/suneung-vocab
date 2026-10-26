@@ -94,3 +94,57 @@ test('이미 있는 단어를 다시 넣으면 가중치가 조금 오르고 시
   assert.equal(weightParts(twice, { now }).readd, 3); // 1.5 × 2회
   assert.equal(weightParts(twice, { now: now + 7 * 86400000 }).readd, 1.5); // 7일 뒤 절반
 });
+
+test('데이터 정리: 예전 파서가 뉘앙스 칸에 넣은 정보를 알맞은 칸으로', async () => {
+  const { migrateWord, needsMigration } = await import('../src/lib/notes.js');
+  // 예전 버전이 실제로 만든 데이터 (14개 중 7개가 뉘앙스 칸에 다른 정보)
+  const old = {
+    settlement: '본문 형태: settlements',
+    vary: '본문 형태: varies',
+    arrange: '본문 형태: arranging',
+    constraint: '본문 형태: constraints',
+    integrative: '반의: distributive 분배적인',
+    mutually: 'mutually exclusive: 상호 배타적인',
+    conflict: '명사는 앞, 동사는 뒤에 강세',
+  };
+  const ws = Object.entries(old).map(([w, nuance]) => normalizeWord({ word: w, meanings: w + '뜻', nuance }));
+  assert.equal(ws.filter(needsMigration).length, 7);
+  const m = Object.fromEntries(ws.map((w) => [w.word, migrateWord(w)]));
+  assert.deepEqual([m.settlement.nuance, m.settlement.form], ['', 'settlements']);
+  assert.equal(m.arrange.form, 'arranging');
+  assert.deepEqual(m.integrative.antonyms, ['distributive']);
+  assert.equal(m.integrative.memo, '반의: distributive 분배적인');
+  assert.equal(m.mutually.related, 'mutually exclusive: 상호 배타적인');
+  assert.equal(m.conflict.memo, '명사는 앞, 동사는 뒤에 강세');
+  // 진짜 뉘앙스는 그대로, 섞인 부분만 분리
+  const mixed = migrateWord(normalizeWord({ word: 'reluctant', meanings: 'x', nuance: '부정적. 하기 싫어서 꺼림\n본문 형태: reluctantly\n유의: hesitant 망설이는' }));
+  assert.equal(mixed.nuance, '부정적. 하기 싫어서 꺼림');
+  assert.equal(mixed.form, 'reluctantly');
+  assert.deepEqual(mixed.synonyms, ['hesitant']);
+  assert.equal(migrateWord(words[0]), null); // 샘플 단어는 손댈 것 없음
+});
+
+test('뉘앙스 문제 보기: 섞인 메모·너무 짧은 메모 제외, 중복 없음, 오답 3개 미만이면 출제 안 함', async () => {
+  const { availableTypes } = await import('../src/lib/questions.js');
+  const messy = ['settlement', 'vary', 'arrange', 'constraint'].map((w) => normalizeWord({ word: w, meanings: w + '뜻', nuance: `본문 형태: ${w}s` }));
+  const short = normalizeWord({ word: 'mutually', meanings: '서로', nuance: 'mutually 서로 쓰임' }); // 가리면 거의 안 남음
+  const all = [...words, ...messy, short];
+  for (let i = 0; i < 600; i++) {
+    const q = buildQuestion(all[i % all.length], all);
+    const labels = q.options.map((o) => o.label);
+    assert.equal(new Set(labels).size, labels.length, `${q.type}: ${labels.join(' / ')}`);
+    if (q.type === 'nuance' && q.small) {
+      assert.equal(labels.length, 4);
+      assert.ok(!labels.some((l) => l.startsWith('본문 형태') || l.includes('○○ 서로')), labels.join(' / '));
+    }
+  }
+  // 섞인 메모만 있는 단어끼리면 뉘앙스(메모형) 문제 없음
+  const onlyMessy = [...messy, short];
+  for (const w of onlyMessy) assert.ok(!availableTypes(w, onlyMessy).includes('nuance'));
+  // 쓸 만한 오답 메모가 2개뿐이면 출제 안 함 (3개 필요)
+  const four = words.slice(0, 3).map((w) => ({ ...w, tone: '' }));
+  const noTone = (w) => ({ ...w, tone: '', nuance: w.nuance.replace(/긍정|부정|중립/g, '') });
+  const three = four.map(noTone);
+  assert.ok(!availableTypes(three[0], three).includes('nuance'));
+  assert.ok(availableTypes(noTone(words[0]), words.slice(0, 4).map(noTone)).includes('nuance'));
+});

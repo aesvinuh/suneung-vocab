@@ -173,7 +173,7 @@ test('AI 해설: 유의어·반의어는 후보 중에서만', async () => {
   mockFetch([
     ['api.anthropic.com', (url, init) => {
       const b = JSON.parse(init.body);
-      const out = { meanings: ['꼼꼼한'], tone: 'positive', synonyms: ['careful', 'Painstaking', 'thorough'], antonyms: ['careless', 'messy'], nuance: 'n', example: '', exampleKo: 'k' };
+      const out = { meanings: ['꼼꼼한'], tone: 'positive', synonyms: ['careful', 'Painstaking', 'thorough'], antonyms: ['careless', 'messy'], nuance: 'n', related: '', example: '', exampleKo: 'k' };
       return { id: 'm', type: 'message', role: 'assistant', model: b.model, content: [{ type: 'text', text: JSON.stringify(out) }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } };
     }],
   ]);

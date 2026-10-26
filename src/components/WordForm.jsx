@@ -12,6 +12,9 @@ const toForm = (w = {}) => ({
   pos: w.pos || '',
   tone: w.tone || '',
   nuance: w.nuance || '',
+  memo: w.memo || '',
+  form: w.form || '',
+  related: w.related || '',
   definition: w.definition || '',
   example: w.example || '',
   exampleKo: w.exampleKo || '',
@@ -149,6 +152,19 @@ export default function WordForm({
           <label className="field">
             <Label k="nuance">뉘앙스 메모</Label>
             <textarea rows={3} value={f.nuance} onChange={set('nuance')} placeholder="예) 부정적. 하기 싫어서 꺼림. hesitant는 확신이 없어 망설임" />
+            <small className="hint">뉘앙스 고르기 문제의 보기로 쓰여요. 숙어·반의어·본문 형태는 아래 칸에 따로 적어 주세요.</small>
+          </label>
+          <label className="field">
+            <Label k="related">관련 표현·숙어</Label>
+            <input value={f.related} onChange={set('related')} placeholder="예) mutually exclusive: 상호 배타적인" spellCheck={false} />
+          </label>
+          <label className="field">
+            <Label k="form">본문 형태 (지문에 나온 형태)</Label>
+            <input value={f.form} onChange={set('form')} placeholder="예) settlements" autoCapitalize="none" spellCheck={false} />
+          </label>
+          <label className="field">
+            <Label k="memo">기타 메모 (강세·참고 등)</Label>
+            <textarea rows={2} value={f.memo} onChange={set('memo')} />
           </label>
           <label className="field">
             <Label k="definition">영영 뜻풀이</Label>

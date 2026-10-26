@@ -31,6 +31,9 @@ export default function WordDetail({ word, showExample = true, children }) {
       <p className="detail-meaning">{word.meanings.join(', ')}</p>
       {word.nuance && <p className="detail-nuance">{word.nuance}</p>}
       {word.definition && <p className="detail-def">{word.definition}</p>}
+      {word.related && <p className="detail-related"><b>관련 표현</b> {word.related}</p>}
+      {word.form && <p className="detail-memo">본문 형태 · {word.form}</p>}
+      {word.memo && <p className="detail-memo">메모 · {word.memo}</p>}
       {showExample && word.example && (
         <div className="detail-example">
           <p className="en">

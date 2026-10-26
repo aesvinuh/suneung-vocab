@@ -5,7 +5,7 @@
 //    - 마크다운 표(| … |), 엑셀·구글시트·채팅 화면에서 복사한 표(탭 구분) 모두 가능
 //    - 첫 줄이 '단어 | 품사 | 뜻 | 예문 | 해석' 같은 제목 줄이면 그 순서를 따른다
 //    - 표 줄 아래에 예문·해석 줄이 이어져도 그 단어에 붙는다
-//    - 'settlement (← settlements)'의 괄호는 메모로, '(반의: distributive)'는 반의어로 옮긴다
+//    - 'settlement (← settlements)'의 괄호는 기타 메모로, '(반의: distributive)'는 반의어(+메모)로 옮긴다
 //
 // 2) 여러 줄 형식: 단어 줄로 시작, 그 아래 줄들이 그 단어의 정보
 //      ### 1. reluctant (형용사)
@@ -18,6 +18,7 @@
 //    - 마크다운 꾸밈(**굵게**, ### 제목, - 목록, > 인용), 번호, 화살표, 이모지는 무시한다.
 // '//'로 시작하는 줄은 메모로 보고 무시.
 import { POS_OPTIONS, sameWord, splitList } from './word.js';
+import { classifyNote } from './notes.js';
 
 const POS_ALIASES = {
   n: 'n', noun: 'n', 명: 'n', 명사: 'n',
@@ -40,7 +41,10 @@ const FIELD_NAMES = [
   ['example', /^(예문|예시|예|ex|example(\s*sentence)?|sentence|e\.g)/i],
   ['meanings', /^(뜻|의미|한국어\s*뜻|한국어|meaning|definition|korean)/i],
   ['pos', /^(품사|pos|part\s*of\s*speech)/i],
-  ['nuance', /^(뉘앙스|느낌|어감|메모|특징|설명|참고|팁|nuance|note|usage)/i],
+  ['form', /^(본문\s*형태|지문\s*형태)/i],
+  ['related', /^(관련\s*표현|숙어|연어|구문|phrases?|collocations?)/i],
+  ['memo', /^(기타\s*메모|메모|참고|팁)/i],
+  ['nuance', /^(뉘앙스|느낌|어감|특징|설명|nuance|note|usage)/i],
   ['synonyms', /^(유의어|동의어|비슷한\s*말|syn|synonyms?)/i],
   ['antonyms', /^(반의어|반대말|ant|antonyms?)/i],
   ['skip', /^(번호|no\.?|#|발음|pronunciation|ipa)$/i],
@@ -79,12 +83,12 @@ export function splitExampleKo(s) {
 }
 
 // "reluctant (형)", "reluctant [adj]", "reluctant a." → { word, pos }
-// "settlement (← settlements)" → { word: 'settlement', note: '본문 형태: settlements' }
+// "settlement (← settlements)" → { word: 'settlement', note: 'settlements' } (본문 형태)
 function splitHeadPos(s) {
   const m = s.match(/^(.*?)\s*[([]\s*([^)\]]+)\s*[)\]]\s*$/) || s.match(/^(.*?)\s+([a-z]{1,4}\.)$/i);
   if (m && parsePos(m[2])) return { word: m[1].trim(), pos: parsePos(m[2]), note: '' };
   if (m && /^[A-Za-z]/.test(m[1]) && !/[.?!]$/.test(m[1].trim())) {
-    return { word: m[1].trim(), pos: '', note: m[2].trim().replace(/^[←<]-?\s*/, '본문 형태: ') };
+    return { word: m[1].trim(), pos: '', note: m[2].trim().replace(/^[←<]-?\s*/, '') };
   }
   return { word: s.trim(), pos: '', note: '' };
 }
@@ -93,7 +97,7 @@ function startRecord(line, head) {
   const rec = emptyRecord(line);
   rec.word = head.word;
   rec.pos = head.pos;
-  if (head.note) rec.nuance.push(head.note);
+  if (head.note) rec.form.push(head.note);
   return rec;
 }
 
@@ -105,23 +109,30 @@ function splitMeaningPos(s) {
 }
 
 function emptyRecord(line) {
-  return { line, word: '', pos: '', meanings: [], nuance: [], example: '', exampleKo: '', synonyms: [], antonyms: [], last: null };
+  return { line, word: '', pos: '', meanings: [], nuance: [], form: [], related: [], memo: [], example: '', exampleKo: '', synonyms: [], antonyms: [], last: null };
 }
 
-// 뜻 끝의 설명 괄호 → 메모 (반의:/유의: 는 반의어·유의어 칸에도)
+// 괄호 메모·참고 줄을 알맞은 칸에 (본문 형태 / 반의·유의 / 관련 표현 / 기타 메모)
+function addNote(rec, text, { asNuance = false } = {}) {
+  const c = classifyNote(text, rec.word);
+  if (c.field === 'nuance') {
+    (asNuance ? rec.nuance : rec.memo).push(c.value);
+    return;
+  }
+  if (c.words) {
+    rec[c.field].push(...c.words);
+    if (/[가-힣]/.test(c.value)) rec.memo.push(c.value);
+  } else rec[c.field].push(c.value);
+}
+
+// 뜻 끝의 설명 괄호 → 기타 메모 (반의:/유의: 는 반의어·유의어 칸에도). 뉘앙스 칸에는 넣지 않음
 // 예: "통합적인 (반의: distributive 분배적인)", "상충하다 (명사는 앞, 동사는 뒤에 강세)"
 // "(책임·역할을) 맡다"처럼 앞에 붙은 짧은 괄호는 뜻의 일부로 둔다
 function takeTrailingNotes(rec, text) {
   let t = text.trim();
   let m;
   while ((m = t.match(/\s*[(（]([^()（）]*)[)）]\s*$/)) && m.index > 0 && (/[:：,]|반의|반대|유의|동의|참고|cf\b|주의|강세/.test(m[1]) || m[1].length > 12)) {
-    const note = m[1].trim();
-    const rel = note.match(/^(반의어?|반대말|유의어?|동의어?)\s*[:：]?\s*(.*)$/);
-    if (rel) {
-      const words = rel[2].match(/[A-Za-z][A-Za-z'’-]*(?: [A-Za-z][A-Za-z'’-]*)*/g) || [];
-      (/^반/.test(rel[1]) ? rec.antonyms : rec.synonyms).push(...words);
-    }
-    rec.nuance.unshift(note);
+    addNote(rec, m[1].trim());
     t = t.slice(0, m.index).trim();
   }
   return t;
@@ -148,7 +159,10 @@ function putField(rec, field, v) {
   if (!v) return;
   if (field === 'meanings') addMeaning(rec, v);
   else if (field === 'pos') rec.pos = parsePos(v) || splitMeaningPos(`(${v})`).pos || rec.pos;
-  else if (field === 'nuance') rec.nuance.push(v);
+  else if (field === 'nuance') addNote(rec, v, { asNuance: true });
+  else if (field === 'form') rec.form.push(v);
+  else if (field === 'related') rec.related.push(v);
+  else if (field === 'memo') rec.memo.push(v);
   else if (field === 'synonyms' || field === 'antonyms') rec[field].push(...splitList(v));
   else if (field === 'example') addExample(rec, v);
   else if (field === 'exampleKo') rec.exampleKo = rec.exampleKo ? rec.exampleKo + ' ' + v : v;
@@ -161,6 +175,9 @@ function finish(rec) {
     meanings: [...new Set(rec.meanings)],
     pos: rec.pos,
     nuance: rec.nuance.join(' '),
+    form: rec.form.join(', '),
+    related: rec.related.join(' · '),
+    memo: rec.memo.join(' · '),
     example: rec.example,
     exampleKo: rec.exampleKo,
     synonyms: rec.synonyms,
@@ -196,7 +213,7 @@ function parseTableRow(cells, columns, line) {
     const h = splitHeadPos(cleanLine(cell));
     rec.word = h.word;
     if (h.pos && !rec.pos) rec.pos = h.pos;
-    if (h.note) rec.nuance.unshift(h.note);
+    if (h.note) rec.form.push(h.note);
   });
   return rec;
 }

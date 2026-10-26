@@ -1,5 +1,6 @@
 // 문제 생성: 단어 하나를 받아 가능한 유형 중 하나를 골라 문제 객체를 만든다.
 import { findTarget, maskWord, stripMarkers } from './inflect.js';
+import { splitNuance } from './notes.js';
 import { TYPE_WEIGHTS, pickWeighted } from './weights.js';
 import { effectiveTone, registeredSynonyms, TONE_OPTIONS, uid } from './word.js';
 
@@ -71,7 +72,22 @@ const wordFilter = (target, all) => {
   return (w) => !syn.has(w.id) && meaningOk(w) && w.word.toLowerCase() !== target.word.toLowerCase();
 };
 
-const withNuance = (target) => (w) => w.nuance.length > 0 && w.nuance !== target.nuance;
+// ── 뉘앙스 문제 보기 규칙 ──
+// - 각 단어의 뉘앙스 메모 전체(한 덩어리)를 보기로 쓴다. 줄 단위로 쪼개지 않는다.
+// - 정답 단어(활용형 포함)는 ○○로 가린다. 가린 뒤 남는 글자(한글·영문)가 MIN_VISIBLE 미만이면 보기로 쓰지 않는다.
+// - 본문 형태·반의어·숙어 같은 정보가 섞인 메모는 쓰지 않는다 (설정 → 데이터 정리로 분리 가능).
+// - 같은 문구의 보기는 하나만. 조건에 맞는 오답 보기가 NUANCE_DISTRACTORS개 미만이면 이 문제(메모형)는 내지 않는다.
+const MIN_VISIBLE = 10;
+const NUANCE_DISTRACTORS = 3;
+const memoLabel = (w) => clip(maskWord(w.nuance, w.word));
+const visibleChars = (s) => (s.replace(/○/g, '').match(/[가-힣A-Za-z]/g) || []).length;
+const hasNuance = (w) => !!w.nuance && visibleChars(memoLabel(w)) >= MIN_VISIBLE && splitNuance(w.nuance, w.word).moved === 0;
+const withNuance = (target) => (w) => hasNuance(w) && memoLabel(w) !== memoLabel(target);
+// 서로 다른 보기 후보 (같은 문구는 하나만)
+function nuancePool(target, all) {
+  const seen = new Set([memoLabel(target)]);
+  return all.filter((w) => w.id !== target.id && withNuance(target)(w) && !seen.has(memoLabel(w)) && seen.add(memoLabel(w)));
+}
 
 // ── 단어별로 가능한 유형 판정 ──
 export function availableTypes(word, all) {
@@ -84,7 +100,7 @@ export function availableTypes(word, all) {
   if (target && others.filter(wordFilter(word, all)).length >= 3) types.push('blank');
   if (target && word.meanings.length && meaningPool >= 3) types.push('underline');
   if (target && registeredSynonyms(word, all).length >= 1) types.push('synonym');
-  if (effectiveTone(word) || (word.nuance && others.filter(withNuance(word)).length >= 2)) types.push('nuance');
+  if (effectiveTone(word) || (hasNuance(word) && nuancePool(word, all).length >= NUANCE_DISTRACTORS)) types.push('nuance');
   return types;
 }
 
@@ -148,8 +164,8 @@ const BUILDERS = {
 
   nuance(word, all, rng) {
     const tone = effectiveTone(word);
-    const memoPool = all.filter((w) => w.id !== word.id && withNuance(word)(w));
-    const canMemo = word.nuance && memoPool.length >= 2;
+    const pool = hasNuance(word) ? nuancePool(word, all) : [];
+    const canMemo = pool.length >= NUANCE_DISTRACTORS;
     const useTone = tone && (!canMemo || rng() < 0.5);
 
     if (useTone) {
@@ -159,8 +175,9 @@ const BUILDERS = {
         options: TONE_OPTIONS.map((t) => ({ key: t.value, label: t.label + '적', wordId: null, correct: t.value === tone })),
       };
     }
-    const ds = pickDistractors(word, all, 3, rng, withNuance(word));
-    const memo = (w) => clip(maskWord(w.nuance, w.word));
+    const poolIds = new Set(pool.map((w) => w.id));
+    const ds = pickDistractors(word, all, 3, rng, (w) => poolIds.has(w.id));
+    const memo = memoLabel;
     return {
       title: '이 단어에 맞는 뉘앙스 설명은?',
       prompt: { kind: 'word', word: word.word, pos: word.pos },
@@ -185,7 +202,7 @@ const BUILDERS = {
   },
 };
 
-function clip(text, max = 90) {
+function clip(text, max = 160) {
   const t = stripMarkers(text).replace(/\s+/g, ' ');
   return t.length > max ? t.slice(0, max - 1) + '…' : t;
 }

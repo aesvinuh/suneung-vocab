@@ -23,7 +23,7 @@ const SHORT = { mw: 'MW', wikt: 'Wiktionary', fd: 'FreeDict' };
 const PRIORITY = ['mw', 'wikt', 'fd']; // 공신력 순
 
 // 자동으로 채울 수 있는 칸
-export const FILL_FIELDS = ['pos', 'definition', 'meanings', 'tone', 'nuance', 'example', 'exampleKo', 'synonyms', 'antonyms'];
+export const FILL_FIELDS = ['pos', 'definition', 'meanings', 'tone', 'nuance', 'related', 'example', 'exampleKo', 'synonyms', 'antonyms'];
 
 /**
  * @returns {Promise<{ all, merged: Array|null, mergeError: string|null }>}
@@ -159,6 +159,7 @@ export async function buildDraft(word, res, selectedIds) {
     if (!data.meanings) put('meanings', ai.meanings, 'ai');
     put('tone', ai.tone, 'ai');
     put('nuance', ai.nuance, 'ai');
+    put('related', ai.related, 'ai');
     if (!data.example) put('example', ai.example, 'ai');
     put('exampleKo', ai.exampleKo, 'ai');
   } catch (e) {

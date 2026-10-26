@@ -36,6 +36,9 @@ const AI_PROMPT = `아래 영단어들을 수능 단어장으로 정리해줘. �
 const FIELDS = [
   ['meanings', '뜻'],
   ['nuance', '뉘앙스'],
+  ['related', '관련 표현'],
+  ['form', '본문 형태'],
+  ['memo', '기타 메모'],
   ['example', '예문'],
   ['exampleKo', '해석'],
   ['synonyms', '유의어'],

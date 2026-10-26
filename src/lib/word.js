@@ -49,6 +49,9 @@ export function normalizeWord(input, now = Date.now()) {
     pos: input.pos || '',
     tone: input.tone || '',
     nuance: (input.nuance || '').trim(),
+    form: (input.form || '').trim(), // 본문 형태 (지문에 나온 형태, 예: settlements)
+    related: (input.related || '').trim(), // 관련 표현·숙어 (예: mutually exclusive: 상호 배타적인)
+    memo: (input.memo || '').trim(), // 기타 메모 (강세 등). 문제에는 쓰지 않음
     definition: (input.definition || '').trim(), // 영영 뜻풀이 (자동 채우기)
     example: (input.example || '').trim(),
     exampleKo: (input.exampleKo || '').trim(),

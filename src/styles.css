@@ -348,3 +348,7 @@ ol.help { padding-left: 20px; }
 .review-head .link-btn { margin-left: auto; }
 .pos { white-space: nowrap; }
 .review-head .src-tag { white-space: normal; line-height: 1.4; }
+.detail-memo { font-size: 13px; color: var(--ink-3); }
+.detail-related { font-size: 14px; }
+.detail-related b { font-size: 12px; color: var(--ink-2); margin-right: 4px; }
+.warn-card { border-color: var(--bad); }

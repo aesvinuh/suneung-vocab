@@ -13,7 +13,8 @@ const SYSTEM = `너는 한국 고등학생의 수능 영어 어휘 학습 앱에
 - tone: 이 뜻으로 쓰일 때의 감정 톤. positive / negative / neutral 중 하나.
 - synonyms: [유의어 후보] 중에서 고른 뜻에 맞고 수능·일반 독해에 나올 만한 흔한 단어만 최대 4개. 후보에 없는 단어는 쓰지 않는다. 맞는 게 없으면 빈 배열.
 - antonyms: [반의어 후보] 중에서 같은 기준으로 최대 3개.
-- nuance: 2~3문장. 긍정·부정, 격식 정도(일상적/격식체), 강도를 짚고, 고른 synonyms가 있으면 그중 1~2개와의 차이를 한 문장으로 쓴다. 없으면 유의어 비교는 쓰지 않는다.
+- nuance: 2~3문장. 긍정·부정, 격식 정도(일상적/격식체), 강도를 짚고, 고른 synonyms가 있으면 그중 1~2개와의 차이를 한 문장으로 쓴다. 없으면 유의어 비교는 쓰지 않는다. 숙어·반의어·활용형·발음 정보는 nuance에 넣지 않는다.
+- related: [선택한 뜻풀이]나 사전 예문에 실제로 나온, 이 뜻과 관련된 숙어·연어 0~2개를 "표현: 한국어 뜻" 형식으로, 여러 개면 " · "로 구분. 자료에 없으면 빈 문자열.
 - example: [예문]이 비어 있을 때만, 선택한 뜻풀이에 맞는 수능 수준의 영어 예문 한 문장을 쓴다. [예문]이 있으면 빈 문자열.
 - exampleKo: 최종 예문([예문] 또는 네가 쓴 example)의 자연스러운 한국어 해석.`;
 
@@ -113,6 +114,7 @@ export async function generateKorean(input, apiKey) {
     synonyms: z.array(z.string()),
     antonyms: z.array(z.string()),
     nuance: z.string(),
+    related: z.string(),
     example: z.string(),
     exampleKo: z.string(),
   });

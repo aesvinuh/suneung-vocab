@@ -1,5 +1,6 @@
 import { useVocab } from '../store/VocabContext.jsx';
 import { hasMeaning, isIncomplete, todayKey } from '../lib/word.js';
+import { needsMigration } from '../lib/notes.js';
 import { SAMPLE_WORDS } from '../data/sampleWords.js';
 import { navigate } from '../lib/router.js';
 
@@ -10,6 +11,7 @@ export default function Home() {
   const noteCount = words.filter((w) => w.note.inNote).length;
   const studyable = words.filter(hasMeaning).length;
   const incomplete = words.filter(isIncomplete).length;
+  const messy = words.filter(needsMigration).length;
 
   return (
     <div className="home">
@@ -66,6 +68,11 @@ export default function Home() {
             일괄 추가
           </a>
         </div>
+        {messy > 0 && (
+          <a className="link-btn" href="#/settings">
+            뉘앙스 칸 정리가 필요한 단어 {messy}개 → 정리하기
+          </a>
+        )}
         {incomplete > 0 && (
           <a className="link-btn" href="#/autofill">
             미완성 단어 {incomplete}개 자동 채우기 →

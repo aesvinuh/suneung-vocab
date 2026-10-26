@@ -34,6 +34,9 @@ export function summarize(w) {
     tone: effectiveTone(w),
     nuance: w.nuance,
     definition: w.definition,
+    memo: w.memo,
+    form: w.form,
+    related: w.related,
     example: w.example, // 별표 표시는 화면의 <Sentence>가 처리
     exampleKo: w.exampleKo,
     synonyms: w.synonyms,

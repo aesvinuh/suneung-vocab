@@ -9,6 +9,7 @@ import { lookupMw } from '../lib/dictionary.js';
 import { testClaudeKey } from '../lib/aiFill.js';
 import { useOnline } from '../lib/useOnline.js';
 import { getToken, setToken, testToken } from '../lib/sync.js';
+import NuanceCleanup from '../components/NuanceCleanup.jsx';
 
 export default function Settings() {
   const { words, daily, importData, clearAll, addWords } = useVocab();
@@ -52,6 +53,8 @@ export default function Settings() {
     <>
       <PageHeader title="설정" />
       {msg && <p className={'notice ' + msg.type}>{msg.text}</p>}
+
+      <NuanceCleanup />
 
       <GithubSync />
 
