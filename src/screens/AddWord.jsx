@@ -4,8 +4,9 @@ import PageHeader from '../components/PageHeader.jsx';
 import WordForm from '../components/WordForm.jsx';
 import SenseChooser from '../components/SenseChooser.jsx';
 import { sameWord } from '../lib/word.js';
-import { buildDraft, lookup } from '../lib/autofill.js';
+import { buildDraft, choicesOf, lookup } from '../lib/autofill.js';
 import { useOnline } from '../lib/useOnline.js';
+import { getKeys } from '../lib/apiKeys.js';
 
 // step: input → (loading) → choose(뜻이 여러 개일 때) → (loading) → preview → 저장 후 input
 export default function AddWord() {
@@ -35,18 +36,19 @@ export default function AddWord() {
     setError(null);
     setStep({ kind: 'loading', msg: `'${word}' 사전 검색 중…` });
     try {
-      const dict = await lookup(word);
-      if (dict.senses.length > 1) setStep({ kind: 'choose', word, dict, selected: [dict.senses[0].id] });
-      else await makeDraft(word, dict, [dict.senses[0].id]);
+      const res = await lookup(word);
+      const choices = choicesOf(res);
+      if (choices.items.length > 1) setStep({ kind: 'choose', word, res, choices, selected: [choices.items[0].id] });
+      else await makeDraft(word, res, [choices.items[0].id]);
     } catch (e) {
       setError(e.message);
       setStep({ kind: 'input', initial: { word } });
     }
   };
 
-  const makeDraft = async (word, dict, selected) => {
-    setStep({ kind: 'loading', msg: 'AI가 한국어 뜻과 뉘앙스를 정리하는 중…' });
-    const draft = await buildDraft(word, dict, selected);
+  const makeDraft = async (word, res, selected) => {
+    setStep({ kind: 'loading', msg: getKeys().claude ? 'AI가 뉘앙스 메모를 정리하는 중…' : '정리하는 중…' });
+    const draft = await buildDraft(word, res, selected);
     setStep({ kind: 'preview', ...draft });
   };
 
@@ -89,9 +91,9 @@ export default function AddWord() {
       {step.kind === 'choose' && (
         <section className="stack">
           <p className="hint">뜻이 여러 개예요. 외울 뜻을 골라 주세요. (여러 개 가능, 처음 고른 뜻이 대표 뜻)</p>
-          <SenseChooser word={step.word} dict={step.dict} selected={step.selected} onChange={(selected) => setStep({ ...step, selected })} />
+          <SenseChooser word={step.word} choices={step.choices} selected={step.selected} onChange={(selected) => setStep({ ...step, selected })} />
           <div className="sticky-actions">
-            <button className="btn primary block" disabled={!step.selected.length} onClick={() => makeDraft(step.word, step.dict, step.selected)}>
+            <button className="btn primary block" disabled={!step.selected.length} onClick={() => makeDraft(step.word, step.res, step.selected)}>
               고른 뜻 {step.selected.length}개로 채우기
             </button>
             <button className="link-btn" onClick={() => backToInput(step.word)}>

@@ -5,7 +5,7 @@ import SenseChooser from '../components/SenseChooser.jsx';
 import SourceTag from '../components/SourceTag.jsx';
 import WordForm from '../components/WordForm.jsx';
 import { isIncomplete, POS_LABEL, TONE_LABEL } from '../lib/word.js';
-import { buildDraft, lookup, mergeMissing } from '../lib/autofill.js';
+import { buildDraft, choicesOf, lookup, mergeMissing } from '../lib/autofill.js';
 import { getKeys } from '../lib/apiKeys.js';
 import { useOnline } from '../lib/useOnline.js';
 
@@ -23,7 +23,7 @@ export default function AutoFillBatch() {
   const incomplete = useMemo(() => words.filter(isIncomplete).sort((a, b) => b.createdAt - a.createdAt), [words]);
   const [phase, setPhase] = useState('select');
   const [picked, setPicked] = useState(() => new Set(incomplete.slice(0, MAX_PER_RUN).map((w) => w.id)));
-  const [items, setItems] = useState([]); // { id, word, dict?, error?, selected[], result?, include, saved, editing }
+  const [items, setItems] = useState([]); // { id, word, res?, choices?, error?, selected[], result?, include, saved, editing }
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const hasClaude = !!getKeys().claude;
 
@@ -43,20 +43,21 @@ export default function AutoFillBatch() {
     const out = [];
     for (const w of targets) {
       try {
-        const dict = await lookup(w.word);
-        out.push({ id: w.id, word: w.word, dict, selected: [dict.senses[0].id] });
+        const res = await lookup(w.word);
+        const choices = choicesOf(res);
+        out.push({ id: w.id, word: w.word, res, choices, selected: [choices.items[0].id] });
       } catch (e) {
         out.push({ id: w.id, word: w.word, error: e.message, selected: [] });
       }
       setProgress((p) => ({ ...p, done: p.done + 1 }));
     }
     setItems(out);
-    if (out.some((it) => it.dict && it.dict.senses.length > 1)) setPhase('choose');
+    if (out.some((it) => it.choices && it.choices.items.length > 1)) setPhase('choose');
     else runGenerate(out);
   };
 
   const runGenerate = async (list) => {
-    const todo = list.filter((it) => it.dict && it.selected.length);
+    const todo = list.filter((it) => it.res && it.selected.length);
     setPhase('generating');
     setProgress({ done: 0, total: todo.length });
     const results = new Map();
@@ -65,7 +66,7 @@ export default function AutoFillBatch() {
     const worker = async () => {
       while (queue.length) {
         const it = queue.shift();
-        const draft = await buildDraft(it.word, it.dict, it.selected);
+        const draft = await buildDraft(it.word, it.res, it.selected);
         const current = words.find((w) => w.id === it.id);
         results.set(it.id, { draft, ...mergeMissing(current, draft) });
         setProgress((p) => ({ ...p, done: p.done + 1 }));
@@ -96,7 +97,7 @@ export default function AutoFillBatch() {
           <p className="hint">
             뜻·뉘앙스·예문 중 비어 있는 칸만 채워요. 직접 쓴 내용은 덮어쓰지 않아요. 한 번에 최대 {MAX_PER_RUN}개.
           </p>
-          {!hasClaude && <p className="notice bad">Claude API 키가 없어 영영 뜻·예문·유의어만 채워져요. 한국어 뜻·뉘앙스까지 채우려면 설정에서 키를 넣어 주세요.</p>}
+          {!hasClaude && <p className="notice bad">Claude API 키가 없어 사전 내용(한국어 뜻·영영 뜻·예문·유의어)만 채워져요. 뉘앙스 메모까지 채우려면 설정에서 키를 넣어 주세요.</p>}
           {!online && <p className="notice bad">오프라인이에요. 인터넷에 연결되면 쓸 수 있어요.</p>}
           {incomplete.length === 0 ? (
             <p className="empty">미완성 단어가 없어요.</p>
@@ -141,13 +142,13 @@ export default function AutoFillBatch() {
               <p key={it.id} className="notice bad">
                 <b>{it.word}</b>: {it.error}
               </p>
-            ) : it.dict.senses.length > 1 ? (
-              <SenseChooser key={it.id} word={it.word} dict={it.dict} selected={it.selected} onChange={(selected) => update(it.id, { selected })} />
+            ) : it.choices.items.length > 1 ? (
+              <SenseChooser key={it.id} word={it.word} choices={it.choices} selected={it.selected} onChange={(selected) => update(it.id, { selected })} />
             ) : null,
           )}
           <div className="sticky-actions">
             <button className="btn primary block" onClick={() => runGenerate(items)}>
-              다음: {hasClaude ? 'AI로 해설 채우기' : '미리보기'}
+              다음: {hasClaude ? 'AI로 뉘앙스 채우기' : '미리보기'}
             </button>
           </div>
         </section>

@@ -167,11 +167,12 @@ function ApiKeys() {
         {status.save && <small className="hint">{status.save}</small>}
       </div>
       <ul className="help">
+        <li>한국어 뜻은 키 없이 위키낱말사전(영한)에서 가져와요. 사전에 없는 단어만 AI가 영영 뜻풀이를 보고 정리해요.</li>
         <li>
           Merriam-Webster: <a href="https://dictionaryapi.com/register/index" target="_blank" rel="noreferrer">dictionaryapi.com 가입</a> → 'Request API Key 1'에서 <b>Merriam-Webster's Learner's Dictionary</b>를 고르면 키가 나와요. 없으면 Free Dictionary만 써요.
         </li>
         <li>
-          Claude: <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">console.anthropic.com</a> → API Keys → Create Key. 결제 수단 등록이 필요해요. 없으면 영영 뜻·예문·유의어만 채워져요.
+          Claude: <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">console.anthropic.com</a> → API Keys → Create Key. 결제 수단 등록이 필요해요. 없으면 뉘앙스 메모·예문 해석은 직접 써야 해요.
         </li>
       </ul>
     </section>

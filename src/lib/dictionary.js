@@ -1,5 +1,7 @@
-// 사전 조회: Merriam-Webster Learner's → 실패하면 Free Dictionary.
-// 두 API 모두 Access-Control-Allow-Origin: * 이라 브라우저에서 바로 호출 가능 (중계 서버 불필요).
+// 사전 조회
+//  - 영영: Merriam-Webster Learner's → 실패하면 Free Dictionary
+//  - 영한: 위키낱말사전(ko.wiktionary.org)의 '영어' 항목 → 한국어 뜻
+// 모두 Access-Control-Allow-Origin: * 이라 브라우저에서 바로 호출 가능 (중계 서버 불필요).
 //
 // 결과 형식:
 // { source: 'mw'|'fd', senses: [{ id, pos, definition, examples[] }],
@@ -7,6 +9,7 @@
 
 const MW_URL = 'https://www.dictionaryapi.com/api/v3/references/learners/json/';
 const FD_URL = 'https://api.dictionaryapi.dev/api/v2/entries/en/';
+const KO_URL = 'https://ko.wiktionary.org/w/api.php?action=parse&prop=wikitext&format=json&formatversion=2&origin=*&page=';
 const MAX_SENSES = 8;
 const MAX_REL = 6;
 
@@ -202,3 +205,66 @@ const POS_MAP = {
   'phrasal verb': 'phr', idiom: 'phr', phrase: 'phr',
 };
 export const mapPos = (fl) => POS_MAP[String(fl).toLowerCase()] || '';
+
+// ── 위키낱말사전 (영한, 키 불필요) ───────────────────────────
+// 결과: { source: 'kowikt', senses: [{ id, pos('adj' 등), posLabel('형용사'), meaning('꺼리는, 마음이 내키지 않는') }] }
+
+const KO_POS = { 명사: 'n', 동사: 'v', 형용사: 'adj', 부사: 'adv', 전치사: 'prep', 접속사: 'conj', 숙어: 'phr', 관용구: 'phr', 구: 'phr', 구동사: 'phr' };
+
+export async function lookupKoWiktionary(word) {
+  let res;
+  try {
+    res = await fetch(KO_URL + encodeURIComponent(word.trim().toLowerCase()));
+  } catch {
+    throw new LookupError('위키낱말사전에 연결하지 못했어요.');
+  }
+  if (!res.ok) throw new LookupError(`위키낱말사전 오류 (${res.status}).`);
+  const data = await res.json();
+  if (data.error) throw new LookupError('위키낱말사전에 없는 단어예요.', { notFound: true });
+  return parseKoWiktionary(data.parse?.wikitext || '');
+}
+
+export function parseKoWiktionary(wikitext) {
+  // '== 영어 ==' 구간만 (다음 언어 제목 전까지)
+  const start = wikitext.search(/^==\s*영어\s*==\s*$/m);
+  if (start < 0) throw new LookupError('위키낱말사전에 영어 뜻이 없어요.', { notFound: true });
+  const rest = wikitext.slice(start).split('\n');
+  const lines = [rest[0]];
+  for (const l of rest.slice(1)) {
+    if (/^==[^=].*[^=]==\s*$/.test(l)) break;
+    lines.push(l);
+  }
+  const catPos = (lines.join('\n').match(/\[\[분류:영어 ([^\]]+)\]\]/) || [])[1];
+  let posLabel = null;
+  const senses = [];
+  for (const l of lines) {
+    const head = l.match(/^===+\s*([^=]+?)\s*===+\s*$/);
+    if (head) {
+      posLabel = KO_POS[head[1]] ? head[1] : posLabel;
+      continue;
+    }
+    if (!/^#(?![:*#])/.test(l)) continue;
+    const meaning = cleanKoWikt(l.replace(/^#\s*/, ''));
+    if (!meaning || !/[가-힣]/.test(meaning)) continue;
+    const label = posLabel || (KO_POS[catPos] ? catPos : '');
+    senses.push({ id: 'ko' + senses.length, pos: KO_POS[label] || '', posLabel: label, meaning });
+    if (senses.length >= MAX_SENSES) break;
+  }
+  if (!senses.length) throw new LookupError('위키낱말사전에 한국어 뜻이 아직 없어요.', { notFound: true });
+  return { source: 'kowikt', senses };
+}
+
+export function cleanKoWikt(s) {
+  return s
+    .replace(/〔[^〕]*〕/g, '') // 영문 풀이
+    .replace(/\{\{[^{}]*\}\}/g, '')
+    .replace(/\[\[(?:[^|\]]*\|)?([^\]]*)\]\]/g, '$1')
+    .replace(/'{2,}/g, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/[\s.。]+$/, '')
+    .trim();
+}
+
+// 한 줄 뜻('꺼리는, 마음이 내키지 않는')을 뜻 목록으로
+export const splitKoMeaning = (m) => m.split(/\s*[,;]\s*/).map((x) => x.trim()).filter(Boolean);

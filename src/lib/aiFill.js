@@ -9,14 +9,16 @@ const SYSTEM = `너는 한국 고등학생의 수능 영어 어휘 학습 앱에
 반드시 사용자가 준 [사전 자료]의 영영 뜻풀이와 예문을 근거로 쓰고, 자료에 없는 뜻을 만들지 않는다.
 수능 단어장처럼 간결한 한국어로 쓴다.
 
-- meanings: [선택한 뜻풀이]에 해당하는 한국어 뜻 1~3개. 각각 짧게 (예: "꺼리는", "마지못해 하는").
+- meanings: [한국어 사전 뜻]이 있으면 그대로 옮긴다. 없을 때만 [선택한 뜻풀이]에 해당하는 한국어 뜻 1~3개를 짧게 쓴다 (예: "꺼리는", "마지못해 하는").
+- 뉘앙스와 해석은 [한국어 사전 뜻]의 의미에 맞춘다.
 - tone: 이 뜻으로 쓰일 때의 감정 톤. positive / negative / neutral 중 하나.
 - nuance: 2~3문장. 긍정·부정, 격식 정도(일상적/격식체), 강도를 짚고, [유의어]가 있으면 그중 1~2개와의 차이를 한 문장으로 쓴다. [유의어]가 비어 있으면 유의어 비교는 쓰지 않는다.
 - example: [예문]이 비어 있을 때만, 선택한 뜻풀이에 맞는 수능 수준의 영어 예문 한 문장을 쓴다. [예문]이 있으면 빈 문자열.
 - exampleKo: 최종 예문([예문] 또는 네가 쓴 example)의 자연스러운 한국어 해석.`;
 
-function buildUserMessage({ word, senses, synonyms, example }) {
-  const lines = [`[단어] ${word}`, '', '[선택한 뜻풀이]'];
+function buildUserMessage({ word, senses, koMeanings = [], synonyms, example }) {
+  const lines = [`[단어] ${word}`, `[한국어 사전 뜻] ${koMeanings.length ? koMeanings.join(', ') : '(없음)'}`, '', '[선택한 뜻풀이]'];
+  if (!senses.length) lines.push('(영영 사전 자료 없음)');
   senses.forEach((s, i) => {
     lines.push(`${i + 1}. (${s.pos || '?'}) ${s.definition}`);
     s.examples.forEach((ex) => lines.push(`   - 사전 예문: ${ex}`));

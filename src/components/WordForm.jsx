@@ -3,6 +3,9 @@ import { POS_OPTIONS, TONE_OPTIONS } from '../lib/word.js';
 import { findTarget } from '../lib/inflect.js';
 import SourceTag from './SourceTag.jsx';
 
+// 네이버는 공개 사전 API가 없어 자동으로 가져올 수 없고, 사전 페이지를 새 탭으로 연다
+const naverDictUrl = (word) => 'https://en.dict.naver.com/#/search?query=' + encodeURIComponent(word.trim());
+
 const toForm = (w = {}) => ({
   word: w.word || '',
   meanings: (w.meanings || []).join(', '),
@@ -106,6 +109,11 @@ export default function WordForm({
           )}
         </div>
       </label>
+      {f.word.trim() && (
+        <a className="naver-link" href={naverDictUrl(f.word)} target="_blank" rel="noreferrer">
+          네이버 영어사전에서 '{f.word.trim()}' 보기 ↗
+        </a>
+      )}
       {warn && warn(f)}
       <label className="field">
         <Label k="meanings">뜻 (여러 개는 쉼표로){!requireMeaning && ' · 비워 두면 미완성'}</Label>

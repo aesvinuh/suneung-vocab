@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseMw, parseFd, cleanMw, mapPos } from '../src/lib/dictionary.js';
-import { buildDraft, mergeMissing } from '../src/lib/autofill.js';
+import { readFileSync } from 'node:fs';
+import { parseMw, parseFd, cleanMw, mapPos, parseKoWiktionary } from '../src/lib/dictionary.js';
+import { buildDraft, choicesOf, mergeMissing } from '../src/lib/autofill.js';
 import { normalizeWord } from '../src/lib/word.js';
 
 // Learner's API 응답 구조를 축약한 예시
@@ -46,12 +47,12 @@ test('FD 파싱', () => {
 
 test('초안(키 없음) → 사전 내용만, 비어 있는 칸만 병합', async () => {
   const dict = parseMw('decline', MW);
-  const draft = await buildDraft('decline', dict, ['mw1']);
+  const draft = await buildDraft('decline', { en: dict, ko: null }, ['mw1']);
   assert.equal(draft.data.pos, 'v');
   assert.equal(draft.data.example, 'The number of students has declined.');
   assert.equal(draft.sources.example, 'mw');
   assert.equal(draft.data.meanings, undefined);
-  assert.equal(draft.warnings.length, 1);
+  assert.equal(draft.warnings.length, 1); // 키 없음 안내
 
   const existing = normalizeWord({ word: 'decline', meanings: '감소하다', example: '내 예문 declined' });
   const { word, filled } = mergeMissing(existing, draft);
@@ -59,4 +60,39 @@ test('초안(키 없음) → 사전 내용만, 비어 있는 칸만 병합', asy
   assert.equal(word.example, '내 예문 declined'); // 덮어쓰지 않음
   assert.ok(filled.includes('definition') && filled.includes('synonyms') && !filled.includes('example'));
   assert.equal(word.sources.definition, 'mw');
+});
+
+const koFixture = (w) => JSON.parse(readFileSync(new URL(`./fixtures/fixtures-ko-${w}.json`, import.meta.url))).parse.wikitext;
+
+test('위키낱말사전 파싱 (실제 응답 저장본)', () => {
+  assert.deepEqual(parseKoWiktionary(koFixture('reluctant')).senses, [{ id: 'ko0', pos: 'adj', posLabel: '형용사', meaning: '마음이 내키지 않는, 꺼리는' }]);
+  const und = parseKoWiktionary(koFixture('undermine')).senses; // 품사 제목 없이 분류로만 품사 표시
+  assert.equal(und.length, 3);
+  assert.equal(und[1].meaning, '(특히 자신감・권위 등을) 약화시키다');
+  assert.equal(und[1].pos, 'v');
+  const obs = parseKoWiktionary(koFixture('obscure')).senses.map((s) => s.pos);
+  assert.deepEqual(obs, ['adj', 'v', 'v']);
+  assert.throws(() => parseKoWiktionary('== 프랑스어 ==\n# 무엇'), (e) => e.notFound);
+  assert.throws(() => parseKoWiktionary('== 영어 ==\n#\n:*'), (e) => e.notFound); // 뜻이 빈 초안
+});
+
+test('한국어 뜻 우선: 고른 한국어 뜻 → meanings, 같은 품사의 영영 뜻·예문', async () => {
+  const ko = parseKoWiktionary(koFixture('obscure'));
+  const en = { source: 'mw', relSource: null, synonyms: [], antonyms: [], senses: [
+    { id: 'mw0', pos: 'adjective', definition: 'not well known', examples: ['an obscure poet'] },
+    { id: 'mw1', pos: 'verb', definition: 'to hide or cover', examples: ['Clouds obscured the moon.'] },
+  ] };
+  const ch = choicesOf({ en, ko });
+  assert.equal(ch.source, 'kowikt');
+  assert.equal(ch.items[1].text, '가리다, 덮다');
+  const d = await buildDraft('obscure', { en, ko }, ['ko1', 'ko2']);
+  assert.deepEqual(d.data.meanings, ['가리다', '덮다', '어둡게 하다']);
+  assert.equal(d.sources.meanings, 'kowikt');
+  assert.equal(d.data.pos, 'v');
+  assert.equal(d.data.definition, 'to hide or cover');
+  assert.equal(d.data.example, 'Clouds obscured the moon.');
+  // 영영 사전이 없어도 한국어 뜻만으로 초안
+  const onlyKo = await buildDraft('obscure', { en: null, ko }, ['ko0']);
+  assert.deepEqual(onlyKo.data.meanings, ['애매한', '명로하지 않은']);
+  assert.equal(choicesOf({ en, ko: null }).items[0].pos, '형용사');
 });
