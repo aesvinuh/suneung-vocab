@@ -2,16 +2,30 @@
 import { openDB } from 'idb';
 
 const DB_NAME = 'suneung-vocab';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const dbPromise = openDB(DB_NAME, DB_VERSION, {
-  upgrade(db) {
-    // words: 단어 1개 = 1레코드 (src/lib/word.js normalizeWord 참고)
-    db.createObjectStore('words', { keyPath: 'id' });
-    // daily: 날짜별 풀이 기록 { date: '2026-10-22', answered, correct }
-    db.createObjectStore('daily', { keyPath: 'date' });
+  upgrade(db, oldVersion) {
+    if (oldVersion < 1) {
+      // words: 단어 1개 = 1레코드 (src/lib/word.js normalizeWord 참고)
+      db.createObjectStore('words', { keyPath: 'id' });
+      // daily: 날짜별 풀이 기록 { date, answered, correct, devices: { 기기id: { answered, correct } } }
+      db.createObjectStore('daily', { keyPath: 'date' });
+    }
+    if (oldVersion < 2) {
+      // meta: 동기화용 부가 정보 (tombstones = 삭제한 단어 id와 시각)
+      db.createObjectStore('meta');
+    }
   },
 });
+
+export async function getMeta(key) {
+  return (await dbPromise).get('meta', key);
+}
+
+export async function putMeta(key, value) {
+  return (await dbPromise).put('meta', value, key);
+}
 
 export async function getAllWords() {
   return (await dbPromise).getAll('words');

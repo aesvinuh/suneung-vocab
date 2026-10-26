@@ -8,6 +8,7 @@ import { getKeys, setKeys } from '../lib/apiKeys.js';
 import { lookupMw } from '../lib/dictionary.js';
 import { testClaudeKey } from '../lib/aiFill.js';
 import { useOnline } from '../lib/useOnline.js';
+import { getToken, setToken, testToken } from '../lib/sync.js';
 
 export default function Settings() {
   const { words, daily, importData, clearAll, addWords } = useVocab();
@@ -41,7 +42,7 @@ export default function Settings() {
   };
 
   const wipe = async () => {
-    if (!confirm('모든 단어와 학습 기록을 삭제할까요? 되돌릴 수 없어요.')) return;
+    if (!confirm('모든 단어와 학습 기록을 삭제할까요? 되돌릴 수 없어요.' + (getToken() ? ' 동기화 중인 다른 기기에서도 지워져요.' : ''))) return;
     if (!confirm('정말 삭제할까요? 먼저 백업을 내보내는 것을 권장해요.')) return;
     await clearAll();
     setMsg({ type: 'ok', text: '모두 삭제했어요.' });
@@ -51,6 +52,8 @@ export default function Settings() {
     <>
       <PageHeader title="설정" />
       {msg && <p className={'notice ' + msg.type}>{msg.text}</p>}
+
+      <GithubSync />
 
       <ApiKeys />
 
@@ -175,6 +178,95 @@ function ApiKeys() {
           Claude: <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">console.anthropic.com</a> → API Keys → Create Key. 결제 수단 등록이 필요해요. 없으면 뉘앙스 메모·예문 해석은 직접 써야 해요.
         </li>
       </ul>
+    </section>
+  );
+}
+
+const TOKEN_URL = 'https://github.com/settings/tokens/new?scopes=gist&description=suneung-vocab%20sync';
+
+function ago(ts) {
+  if (!ts) return '';
+  const s = Math.round((Date.now() - ts) / 1000);
+  if (s < 60) return '방금';
+  if (s < 3600) return `${Math.floor(s / 60)}분 전`;
+  return new Date(ts).toLocaleString();
+}
+
+function GithubSync() {
+  const { sync, syncNow } = useVocab();
+  const online = useOnline();
+  const [token, setT] = useState(getToken);
+  const [msg, setMsg] = useState('');
+  const [show, setShow] = useState(false);
+  const saved = getToken();
+
+  const save = async () => {
+    const t = token.trim();
+    if (!t) {
+      setToken('');
+      setMsg('토큰을 지웠어요. 이 기기는 동기화를 멈춰요.');
+      syncNow();
+      return;
+    }
+    setMsg('확인 중…');
+    try {
+      const login = await testToken(t);
+      setToken(t);
+      setMsg(`✓ ${login} 계정으로 연결했어요. 동기화를 시작해요.`);
+      syncNow();
+    } catch (e) {
+      setMsg('✗ ' + e.message);
+    }
+  };
+
+  const status =
+    sync.state === 'off' ? '꺼짐' :
+    sync.state === 'syncing' ? '동기화 중…' :
+    sync.state === 'error' ? '✗ ' + sync.message :
+    sync.state === 'ok' ? `✓ ${ago(sync.at)} 동기화됨${sync.message ? ' · ' + sync.message : ''}` : '대기 중';
+
+  return (
+    <section className="card">
+      <h2 className="section-title">폰·컴퓨터 동기화 (GitHub)</h2>
+      <p className="hint">
+        단어와 학습 기록을 내 GitHub 계정의 비공개 메모(Gist)에 저장해서 기기끼리 맞춰요. 앱을 열 때, 다시 돌아올 때, 무언가 바꾸고 15초 뒤에 자동으로 동기화돼요.
+      </p>
+      <p className={'sync-status' + (sync.state === 'error' ? ' bad' : sync.state === 'ok' ? ' ok' : '')}>상태: {status}</p>
+      {saved && (
+        <button className="btn block" disabled={!online || sync.state === 'syncing'} onClick={syncNow}>
+          지금 동기화
+        </button>
+      )}
+      <div className="form">
+        <label className="field">
+          <span className="field-label">GitHub 토큰 (기기마다 한 번 입력)</span>
+          <input
+            type={show ? 'text' : 'password'}
+            value={token}
+            onChange={(e) => setT(e.target.value)}
+            placeholder="ghp_…"
+            autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
+          />
+        </label>
+        <label className="check-line">
+          <input type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} /> 토큰 보이기
+        </label>
+        <button className="btn primary block" disabled={!online || token.trim() === saved} onClick={save}>
+          {token.trim() ? '토큰 저장하고 연결' : '토큰 지우기'}
+        </button>
+        {msg && <small className={'hint' + (msg.startsWith('✗') ? ' warn' : '')}>{msg}</small>}
+      </div>
+      <ol className="help">
+        <li>
+          <a href={TOKEN_URL} target="_blank" rel="noreferrer">GitHub 토큰 만들기 페이지</a>를 엽니다 (GitHub 로그인 상태여야 해요).
+        </li>
+        <li>'gist'에 체크가 되어 있는지 확인하고, Expiration은 'No expiration'을 고릅니다.</li>
+        <li>맨 아래 초록색 <b>Generate token</b> → 나온 토큰(ghp_로 시작)을 복사해 위 칸에 붙여 넣고 저장합니다.</li>
+        <li>토큰은 한 번만 보여요. 폰과 컴퓨터에 같은 토큰을 넣으면 돼요 (카톡 '나와의 채팅' 등으로 옮기기).</li>
+      </ol>
+      <p className="hint">토큰은 이 브라우저에만 저장돼요. 'gist' 권한만 있어서 GitHub 저장소 코드는 건드릴 수 없어요.</p>
     </section>
   );
 }

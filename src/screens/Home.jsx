@@ -4,7 +4,7 @@ import { SAMPLE_WORDS } from '../data/sampleWords.js';
 import { navigate } from '../lib/router.js';
 
 export default function Home() {
-  const { words, daily, addWords } = useVocab();
+  const { words, daily, addWords, sync } = useVocab();
   const today = daily[todayKey()] || { answered: 0, correct: 0 };
   const rate = today.answered ? Math.round((today.correct / today.answered) * 100) : null;
   const noteCount = words.filter((w) => w.note.inNote).length;
@@ -16,6 +16,11 @@ export default function Home() {
       <header className="home-head">
         <h1>수능 단어</h1>
         <p className="muted">보는 순간 뜻과 뉘앙스가 떠오르게</p>
+        {sync.state !== 'off' && (
+          <a href="#/settings" className={'sync-pill' + (sync.state === 'error' ? ' bad' : '')}>
+            {sync.state === 'syncing' ? '동기화 중…' : sync.state === 'error' ? '동기화 문제 있음' : sync.state === 'ok' ? '동기화됨' : '동기화 대기'}
+          </a>
+        )}
       </header>
 
       <section className="stats">

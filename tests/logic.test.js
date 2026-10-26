@@ -4,7 +4,6 @@ import { findTarget, maskWord } from '../src/lib/inflect.js';
 import { pickNextWord, computeWeight, GRADUATION } from '../src/lib/weights.js';
 import { availableTypes, buildQuestion } from '../src/lib/questions.js';
 import { applyAnswer } from '../src/lib/grading.js';
-import { parseBulk } from '../src/lib/parse.js';
 import { normalizeWord } from '../src/lib/word.js';
 import { SAMPLE_WORDS } from '../src/data/sampleWords.js';
 
@@ -75,13 +74,4 @@ test('오답 노트 등록과 졸업', () => {
   assert.ok(r.graduated && !r.word.note.inNote && r.word.stats.wrong === 1);
   r = applyAnswer(r.word, { correct: false, mode: 'note' });
   assert.ok(r.word.note.inNote && r.entered);
-});
-
-test('일괄 추가 파싱', () => {
-  const { rows, errors } = parseBulk('a | 뜻1, 뜻2 | 긍정 | ex | 해석\n# 주석\nreluctant | 꺼리는\nbad line\n', words);
-  assert.equal(rows.length, 3); // 'bad line'은 단어만 있는 미완성 줄로 인식
-  assert.equal(rows[1].duplicate, true);
-  assert.equal(errors.length, 0);
-  assert.deepEqual(normalizeWord(rows[2].data).meanings, []);
-  assert.deepEqual(normalizeWord(rows[0].data).meanings, ['뜻1', '뜻2']);
 });

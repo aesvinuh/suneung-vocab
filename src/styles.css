@@ -328,3 +328,14 @@ textarea { resize: vertical; line-height: 1.5; }
 .src-kowikt { color: #6b3f00; border-color: #e3c99a; background: #fdf5e6; }
 .sense-body.ko { font-family: var(--font); font-size: 16px; }
 .naver-link { align-self: flex-start; font-size: 14px; font-weight: 600; color: #03a94d; text-decoration: none; padding: 2px 0; margin-top: -6px; }
+.link-btn.inline { padding: 0; font-size: inherit; }
+.help-box { background: var(--surface); border: 1px solid var(--line); padding: 12px; display: grid; gap: 10px; justify-items: start; }
+.filled dd.en { font-family: var(--font-en); font-size: 16px; }
+.sync-status { font-size: 14px; font-weight: 600; padding: 8px 10px; background: var(--bg); border-left: 3px solid var(--line); margin-bottom: 10px; }
+.sync-status.ok { border-color: var(--ok); }
+.sync-status.bad { border-color: var(--bad); color: var(--bad); }
+.sync-pill { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 600; padding: 2px 8px; border: 1px solid var(--ok); color: var(--ok); text-decoration: none; }
+.sync-pill.bad { border-color: var(--bad); color: var(--bad); }
+.card .form { margin-top: 12px; }
+.help + .hint { margin-top: 10px; }
+ol.help { padding-left: 20px; }
