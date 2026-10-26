@@ -136,6 +136,9 @@ export default function Study({ mode }) {
         cur && (
           <>
             <div className="study-body">
+              {phase === 'ask' && wordsRef.current.filter(hasMeaning).length < 4 && (
+                <p className="notice">뜻이 있는 단어가 4개 이상이면 뜻 고르기·빈칸·밑줄 같은 4지선다 문제도 나와요. 지금은 자기평가 카드만 나와요.</p>
+              )}
               {phase === 'wrong' || phase === 'reveal' ? (
                 <Explanation phase={phase} q={cur.q} chosen={chosen} exp={exp} />
               ) : (
