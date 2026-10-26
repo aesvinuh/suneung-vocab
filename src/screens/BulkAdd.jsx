@@ -19,6 +19,19 @@ The government curtailed public spending.
 vivid - 생생한, 선명한
 frugal | 검소한 | 긍정. 아껴 쓰는 | She lives a frugal life. | 그녀는 검소하게 산다.`;
 
+// Claude·ChatGPT에 단어 정리를 부탁할 때 붙여 쓰는 요청문 (이 형식이면 칸이 확실히 나뉨)
+const AI_PROMPT = `아래 영단어들을 수능 단어장으로 정리해줘. 단어마다 아래 형식을 그대로 지키고, 단어 사이에는 빈 줄을 하나 넣어줘. 다른 설명은 붙이지 마.
+
+단어 (품사)
+뜻: 한국어 뜻 1~3개, 쉼표로 구분
+뉘앙스: 긍정/부정, 격식 정도, 비슷한 단어와의 차이를 한두 문장으로
+예문: 그 단어가 들어간 영어 문장 하나
+해석: 예문의 한국어 해석
+유의어: 영어 단어 2~3개, 쉼표로 구분
+
+[단어 목록]
+`;
+
 const FIELDS = [
   ['meanings', '뜻'],
   ['nuance', '뉘앙스'],
@@ -33,6 +46,16 @@ export default function BulkAdd() {
   const [text, setText] = useState('');
   const [result, setResult] = useState(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copyPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(AI_PROMPT);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setShowHelp(true);
+    }
+  };
   const parsed = useMemo(() => parseBulk(text, words), [text, words]);
   const toAdd = parsed.rows.filter((r) => !r.duplicate);
   const dupCount = parsed.rows.length - toAdd.length;
@@ -47,11 +70,17 @@ export default function BulkAdd() {
     <>
       <PageHeader title="일괄 추가" back="/" />
       <p className="hint">
-        정리한 메모를 그대로 붙여 넣으세요. 단어 줄로 시작하면 그 아래 줄들을 뜻·예문·해석으로 알아서 나눠요. 아래 미리보기에서 칸이 맞게 나뉘었는지 확인하고 추가하면 돼요.{' '}
+        정리한 메모나 Claude·ChatGPT가 정리해 준 글을 그대로 붙여 넣으세요 (표, **굵은 글씨**, 목록 모두 괜찮아요). 단어별로 뜻·예문·해석을 알아서 나누고, 아래 미리보기에서 확인한 뒤 추가하면 돼요.{' '}
         <button className="link-btn inline" onClick={() => setShowHelp((v) => !v)}>
           {showHelp ? '형식 설명 닫기' : '쓰는 법 보기'}
         </button>
       </p>
+      <div className="prompt-copy">
+        <button className="btn small" onClick={copyPrompt}>
+          {copied ? '✓ 복사했어요' : 'AI에게 보낼 요청문 복사'}
+        </button>
+        <span className="hint">Claude에 붙여 넣고 맨 아래에 단어 목록을 쓰면, 이 앱이 확실히 알아보는 형식으로 정리해 줘요.</span>
+      </div>
       {showHelp && (
         <div className="help-box">
           <ul className="help">
@@ -62,7 +91,9 @@ export default function BulkAdd() {
             <li>헷갈리면 머리말을 붙이세요: <code>뜻:</code> <code>뉘앙스:</code> <code>예문:</code> <code>해석:</code> <code>품사:</code> <code>유의어:</code> <code>반의어:</code></li>
             <li>한 줄로 쓰기: <code>vivid - 생생한</code> 또는 <code>단어 | 뜻 | 뉘앙스 | 예문 | 해석</code> (엑셀에서 복사한 표도 돼요)</li>
             <li>단어만 죽 나열하면 뜻 없는 '미완성' 단어로 들어가요.</li>
+            <li>표는 첫 줄(단어 | 품사 | 뜻 | 예문 | 해석 …)의 순서를 따라요. 예문 뒤 괄호 속 한국어는 해석으로 나눠요.</li>
           </ul>
+          <pre className="prompt-text">{AI_PROMPT}</pre>
           <button className="btn small" onClick={() => setText(SAMPLE)}>
             예시 넣어 보기
           </button>

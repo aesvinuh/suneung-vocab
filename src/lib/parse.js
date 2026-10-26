@@ -1,29 +1,28 @@
-// 일괄 추가용 텍스트 파서. 직접 정리한 메모를 붙여 넣으면 단어별로 칸을 나눈다.
+// 일괄 추가용 텍스트 파서. 직접 정리한 메모나 Claude·ChatGPT가 정리해 준 글을 붙여 넣으면 단어별로 칸을 나눈다.
 //
-// 1) 한 줄 형식: 단어 | 뜻 | 뉘앙스 | 예문 | 예문 해석 [| 품사 | 유의어 | 반의어]
-//    ('|' 대신 탭도 가능 → 엑셀·구글시트에서 복사)
+// 1) 표 형식: 단어 | 뜻 | 뉘앙스 | 예문 | 예문 해석 [| 품사 | 유의어 | 반의어]
+//    - 마크다운 표(| … |), 엑셀·구글시트·채팅 화면에서 복사한 표(탭 구분) 모두 가능
+//    - 첫 줄이 '단어 | 품사 | 뜻 | 예문 | 해석' 같은 제목 줄이면 그 순서를 따른다
 //
-// 2) 여러 줄 형식: 단어 한 줄로 시작, 그 아래 줄들이 그 단어의 정보
-//      reluctant (형)
-//      꺼리는, 마지못해 하는
-//      뉘앙스: 부정적. 하기 싫어서 꺼림
-//      He was reluctant to admit his mistake.
-//      그는 자기 실수를 인정하기를 꺼렸다.
-//    - '뜻:', '예문:', '해석:', '뉘앙스:', '품사:', '유의어:', '반의어:' 같은 머리말이 있으면 그대로 따르고,
-//      없으면 내용을 보고 판단한다 (영어 문장 = 예문, 예문 바로 다음 한국어 = 해석,
-//      첫 한국어 줄 = 뜻, 그 뒤 한국어 문장 = 뉘앙스).
-//    - 영어 1~3단어짜리 줄이 나오면 새 단어로 본다. 빈 줄로 구분해도 된다.
-//    - 'reluctant - 꺼리는'처럼 단어와 뜻을 한 줄에 써도 된다.
-// '#'으로 시작하는 줄은 무시.
+// 2) 여러 줄 형식: 단어 줄로 시작, 그 아래 줄들이 그 단어의 정보
+//      ### 1. reluctant (형용사)
+//      - **뜻**: 꺼리는, 마지못해 하는
+//      - 예문: He was reluctant to admit his mistake. (그는 실수를 인정하기를 꺼렸다.)
+//    - '뜻:', '예문:', '해석:', '뉘앙스:', '품사:', '유의어:', '반의어:' (영어 Meaning:, Example: 등도) 머리말을 따르고,
+//      없으면 내용을 보고 판단한다 (영어 문장 = 예문, 예문 다음 한국어 = 해석, 첫 한국어 줄 = 뜻, 그 밖의 한국어 = 뉘앙스).
+//    - 예문 뒤 괄호 안 한국어는 해석으로 나눈다.
+//    - 영어 1~3단어로 된 줄이 나오면 새 단어. 'reluctant - 꺼리는'처럼 한 줄에 써도 된다.
+//    - 마크다운 꾸밈(**굵게**, ### 제목, - 목록, > 인용), 번호, 화살표, 이모지는 무시한다.
+// '//'로 시작하는 줄은 메모로 보고 무시.
 import { POS_OPTIONS, sameWord, splitList } from './word.js';
 
 const POS_ALIASES = {
   n: 'n', noun: 'n', 명: 'n', 명사: 'n',
   v: 'v', vt: 'v', vi: 'v', verb: 'v', 동: 'v', 동사: 'v',
-  adj: 'adj', a: 'adj', 형: 'adj', 형용사: 'adj',
-  adv: 'adv', ad: 'adv', 부: 'adv', 부사: 'adv',
-  prep: 'prep', 전: 'prep', 전치사: 'prep', conj: 'conj', 접: 'conj', 접속사: 'conj',
-  phr: 'phr', 숙어: 'phr', 구: 'phr', 숙: 'phr', idiom: 'phr',
+  adj: 'adj', a: 'adj', adjective: 'adj', 형: 'adj', 형용사: 'adj',
+  adv: 'adv', ad: 'adv', adverb: 'adv', 부: 'adv', 부사: 'adv',
+  prep: 'prep', preposition: 'prep', 전: 'prep', 전치사: 'prep', conj: 'conj', conjunction: 'conj', 접: 'conj', 접속사: 'conj',
+  phr: 'phr', phrase: 'phr', 숙어: 'phr', 구: 'phr', 숙: 'phr', idiom: 'phr', 관용구: 'phr', 구동사: 'phr', 'phrasal verb': 'phr',
 };
 
 export function parsePos(text) {
@@ -31,16 +30,21 @@ export function parsePos(text) {
   return POS_ALIASES[key] || (POS_OPTIONS.some((p) => p.value === key) ? key : '');
 }
 
-const LABELS = [
-  ['meanings', /^(뜻|의미|meaning)/i],
-  ['pos', /^(품사|pos)/i],
-  ['nuance', /^(뉘앙스|느낌|메모|어감|nuance|note)/i],
-  ['exampleKo', /^(예문\s*해석|해석|번역|translation)/i],
-  ['example', /^(예문|예|ex|example|e\.g)/i],
+// 머리말(줄 앞 '뜻:')과 표 제목 줄에 공통으로 쓰는 이름
+const FIELD_NAMES = [
+  ['word', /^(단어|영단어|영어|표제어|어휘|word|english|vocab(ulary)?)$/i],
+  ['exampleKo', /^(예문\s*해석|해석|번역|뜻\s*풀이\s*해석|translation|korean\s*translation)/i],
+  ['example', /^(예문|예시|예|ex|example(\s*sentence)?|sentence|e\.g)/i],
+  ['meanings', /^(뜻|의미|한국어\s*뜻|한국어|meaning|definition|korean)/i],
+  ['pos', /^(품사|pos|part\s*of\s*speech)/i],
+  ['nuance', /^(뉘앙스|느낌|어감|메모|특징|설명|참고|팁|nuance|note|usage)/i],
   ['synonyms', /^(유의어|동의어|비슷한\s*말|syn|synonyms?)/i],
   ['antonyms', /^(반의어|반대말|ant|antonyms?)/i],
+  ['skip', /^(번호|no\.?|#|발음|pronunciation|ipa)$/i],
 ];
-const LABEL_RE = /^([^:：]{1,12})\s*[:：]\s*(.*)$/;
+const fieldOf = (name) => FIELD_NAMES.find(([, re]) => re.test(name.trim()))?.[0] || null;
+const LABEL_RE = /^([^:：]{1,20}?)\s*[:：]\s*(.*)$/;
+const DEFAULT_COLUMNS = ['word', 'meanings', 'nuance', 'example', 'exampleKo', 'pos', 'synonyms', 'antonyms'];
 
 const hangul = (s) => (s.match(/[가-힣]/g) || []).length;
 const latin = (s) => (s.match(/[A-Za-z]/g) || []).length;
@@ -50,8 +54,27 @@ const wordCount = (s) => s.trim().split(/\s+/).filter(Boolean).length;
 const isHeadword = (s) => hangul(s) === 0 && /^[A-Za-z][A-Za-z'’\- ]*$/.test(s) && wordCount(s) <= 3;
 const isEnglishSentence = (s) => hangul(s) === 0 && latin(s) > 0 && (wordCount(s) >= 4 || /[.?!]$/.test(s));
 
-// 줄 앞의 번호·글머리표 제거: "1. ", "- ", "• ", "* ", "①"
-const stripBullet = (s) => s.replace(/^\s*(?:\d+[.)]\s+|[-•*·▪︎◦]\s+|[①-⑳]\s*)/, '').trim();
+// 마크다운 꾸밈·번호·글머리표·화살표·이모지 제거 (불규칙 활용 표시용 *단어*는 남김)
+export function cleanLine(raw) {
+  let s = raw.replace(/\*\*|__|`/g, '').trim();
+  for (let i = 0; i < 3; i++) {
+    s = s
+      .replace(/^[^\p{L}\p{N}(["“‘'*]+/u, '') // # > - • → ✅ 등
+      .replace(/^(?:\d{1,3}[.)]|[①-⑳]|[a-z][.)](?=\s))\s*/u, '') // 1. 1) ① a)
+      .trim();
+  }
+  return s.replace(/^(?:ex|e\.g|예)\s*[).:]\s*/i, '예문: ');
+}
+
+// "She was reluctant to go. (그녀는 가기를 꺼렸다.)" → { en, ko }
+export function splitExampleKo(s) {
+  const i = s.search(/[가-힣]/);
+  if (i < 0) return { en: s.trim(), ko: '' };
+  const en = s.slice(0, i).replace(/[\s(（[/|–—-]+$/, '').trim();
+  const ko = s.slice(i).replace(/[)）\]]+\s*$/, '').trim();
+  if (hangul(en) === 0 && wordCount(en) >= 3 && latin(en) >= 8) return { en, ko };
+  return null;
+}
 
 // "reluctant (형)", "reluctant [adj]", "reluctant a." → { word, pos }
 function splitHeadPos(s) {
@@ -62,7 +85,7 @@ function splitHeadPos(s) {
 
 // 뜻 앞에 붙은 품사 표시: "(형) 꺼리는", "[동] 줄이다", "adj. 꺼리는"
 function splitMeaningPos(s) {
-  const m = s.match(/^\s*[([]\s*([^)\]]{1,6})\s*[)\]]\s*(.*)$/) || s.match(/^\s*([a-z]{1,4}\.)\s*(.*)$/i);
+  const m = s.match(/^\s*[([]\s*([^)\]]{1,12})\s*[)\]]\s*(.*)$/) || s.match(/^\s*([a-z]{1,4}\.)\s*(.*)$/i);
   if (m && parsePos(m[1])) return { pos: parsePos(m[1]), text: m[2].trim() };
   return { pos: '', text: s.trim() };
 }
@@ -77,10 +100,32 @@ function addMeaning(rec, text) {
   rec.meanings.push(...splitList(t));
 }
 
+function addExample(rec, text) {
+  const split = splitExampleKo(text) || { en: text.trim(), ko: '' };
+  if (rec.example) {
+    rec.nuance.push(text.trim()); // 예문은 하나만 → 나머지는 메모로
+    return;
+  }
+  rec.example = split.en;
+  if (split.ko && !rec.exampleKo) rec.exampleKo = split.ko;
+}
+
+// 머리말이 가리키는 칸에 값 넣기
+function putField(rec, field, v) {
+  if (!v) return;
+  if (field === 'meanings') addMeaning(rec, v);
+  else if (field === 'pos') rec.pos = parsePos(v) || splitMeaningPos(`(${v})`).pos || rec.pos;
+  else if (field === 'nuance') rec.nuance.push(v);
+  else if (field === 'synonyms' || field === 'antonyms') rec[field].push(...splitList(v));
+  else if (field === 'example') addExample(rec, v);
+  else if (field === 'exampleKo') rec.exampleKo = rec.exampleKo ? rec.exampleKo + ' ' + v : v;
+  rec.last = field;
+}
+
 function finish(rec) {
   const data = {
     word: rec.word,
-    meanings: rec.meanings,
+    meanings: [...new Set(rec.meanings)],
     pos: rec.pos,
     nuance: rec.nuance.join(' '),
     example: rec.example,
@@ -95,23 +140,38 @@ function finish(rec) {
   return { line: rec.line, data, warnings };
 }
 
-function parsePipeLine(raw, line) {
-  const cols = (raw.includes('|') ? raw.split('|') : raw.split('\t')).map((c) => c.trim());
-  const [word, meanings = '', nuance = '', example = '', exampleKo = '', pos = '', synonyms = '', antonyms = ''] = cols;
-  const head = splitHeadPos(stripBullet(word));
+// ── 표 한 줄 ──
+const splitCells = (raw) => {
+  const t = raw.trim().replace(/^\|/, '').replace(/\|$/, '');
+  return (raw.includes('|') ? t.split('|') : raw.split('\t')).map((c) => c.replace(/\*\*|__|`/g, '').trim());
+};
+const isSeparatorRow = (raw) => /^[\s|:\-–—]+$/.test(raw) && raw.includes('-');
+// 제목 줄인지: 칸의 절반 이상이 알려진 이름이고 '단어' 칸이 있음
+function headerColumns(cells) {
+  const fields = cells.map((c) => (c ? fieldOf(c) : null));
+  const known = fields.filter(Boolean).length;
+  return fields.includes('word') && known >= Math.max(2, cells.filter(Boolean).length / 2) ? fields : null;
+}
+
+function parseTableRow(cells, columns, line) {
   const rec = emptyRecord(line);
-  rec.word = head.word;
-  rec.pos = parsePos(pos) || head.pos;
-  addMeaning(rec, meanings);
-  if (nuance) rec.nuance.push(nuance);
-  Object.assign(rec, { example, exampleKo, synonyms: splitList(synonyms), antonyms: splitList(antonyms) });
-  return finish(rec);
+  cells.forEach((cell, i) => {
+    const field = columns[i];
+    if (!cell || !field || field === 'skip') return;
+    if (field === 'word') {
+      const head = splitHeadPos(cleanLine(cell));
+      rec.word = head.word;
+      if (head.pos && !rec.pos) rec.pos = head.pos;
+    } else putField(rec, field, cell);
+  });
+  return rec;
 }
 
 export function parseBulk(text, existingWords = []) {
   const records = [];
   const errors = [];
   let cur = null;
+  let columns = null; // 표 제목 줄에서 읽은 칸 순서
   const close = () => {
     if (cur && cur.word) records.push(finish(cur));
     cur = null;
@@ -124,38 +184,46 @@ export function parseBulk(text, existingWords = []) {
       close(); // 빈 줄 = 단어 구분
       return;
     }
-    if (raw.startsWith('#')) return;
+    if (raw.startsWith('//')) return;
 
-    // 1) 한 줄 형식
-    if (raw.includes('|') || raw.includes('\t')) {
+    // 1) 표 형식
+    if (raw.includes('|') || rawLine.includes('\t')) {
       close();
-      const r = parsePipeLine(raw, line);
-      if (r.data.word) records.push(r);
-      else errors.push({ line, text: raw, reason: '단어가 비어 있음' });
+      if (isSeparatorRow(raw)) return;
+      const cells = splitCells(rawLine);
+      const header = headerColumns(cells);
+      if (header) {
+        columns = header;
+        return;
+      }
+      const rec = parseTableRow(cells, columns || DEFAULT_COLUMNS, line);
+      if (rec.word) records.push(finish(rec));
+      else errors.push({ line, text: raw, reason: '단어 칸이 비어 있음' });
       return;
     }
+    columns = null;
 
-    const s = stripBullet(raw);
+    const s = cleanLine(raw);
+    if (!s) return;
 
     // 머리말이 붙은 줄: "예문: ..."
     const lm = s.match(LABEL_RE);
-    const label = lm && LABELS.find(([, re]) => re.test(lm[1].trim()));
-    if (label) {
+    const field = lm && fieldOf(lm[1]);
+    if (field && field !== 'skip' && field !== 'word') {
       if (!cur) {
         errors.push({ line, text: raw, reason: '단어 줄보다 먼저 나옴' });
         return;
       }
-      const [field] = label;
-      const v = lm[2].trim();
-      if (field === 'meanings') addMeaning(cur, v);
-      else if (field === 'pos') cur.pos = parsePos(v) || cur.pos;
-      else if (field === 'nuance') cur.nuance.push(v);
-      else if (field === 'synonyms' || field === 'antonyms') cur[field].push(...splitList(v));
-      else if (field === 'example') {
-        if (cur.example) cur.nuance.push(v); // 예문은 하나만 → 나머지는 메모로
-        else cur.example = v;
-      } else cur.exampleKo = cur.exampleKo ? cur.exampleKo + ' ' + v : v;
-      cur.last = field;
+      putField(cur, field, lm[2].trim());
+      return;
+    }
+    if (field === 'word' && lm[2].trim()) {
+      // "단어: reluctant"
+      close();
+      const h = splitHeadPos(lm[2].trim());
+      cur = emptyRecord(line);
+      cur.word = h.word;
+      cur.pos = h.pos;
       return;
     }
 
@@ -169,9 +237,14 @@ export function parseBulk(text, existingWords = []) {
       return;
     }
 
-    // "reluctant - 꺼리는" / "reluctant: 꺼리는" / "reluctant 꺼리는"
-    const inline = s.match(/^([A-Za-z][A-Za-z'’\- ]*?(?:\s*[([][^)\]]+[)\]])?)\s*(?:[-–—:=]\s*|\s+)(?=.*[가-힣])(.+)$/);
-    if (inline && isHeadword(splitHeadPos(inline[1]).word) && isKorean(inline[2])) {
+    // 영어 문장 + 괄호 속 해석 ("The storm abated. (폭풍이 잦아들었다.)")은 예문
+    const exKo = hangul(s) ? splitExampleKo(s) : null;
+
+    // "reluctant - 꺼리는" / "reluctant: 꺼리는" / "reluctant [형] 꺼리는"
+    // 단어 뒤 한국어 앞에 다른 영어가 끼어 있으면(예문) 아님. 품사 표시 [동사], adj. 는 허용
+    const inline = !exKo && s.match(/^([A-Za-z][A-Za-z'’\- ]*?(?:\s*[([][^)\]]+[)\]])?)\s*(?:[-–—:=]\s*|\s+)(?=.*[가-힣])(.+)$/);
+    const beforeKo = inline ? inline[2].slice(0, inline[2].search(/[가-힣]/)).replace(/[([][^)\]]*[)\]]|\b[a-z]{1,4}\./gi, '') : '';
+    if (inline && latin(beforeKo) === 0 && isHeadword(splitHeadPos(inline[1]).word) && isKorean(inline[2])) {
       close();
       const h = splitHeadPos(inline[1]);
       cur = emptyRecord(line);
@@ -188,17 +261,17 @@ export function parseBulk(text, existingWords = []) {
     }
 
     // 머리말 없는 줄: 내용으로 판단
-    if (isEnglishSentence(s)) {
+    if (isEnglishSentence(s) || exKo) {
       if (!cur.example) {
-        cur.example = s;
-        cur.last = 'example';
+        addExample(cur, s);
+        cur.last = cur.exampleKo ? 'exampleKo' : 'example';
       } else {
         cur.nuance.push(s);
         cur.last = 'nuance';
       }
     } else if (isKorean(s)) {
       if (cur.last === 'example' && !cur.exampleKo) {
-        cur.exampleKo = s;
+        cur.exampleKo = s.replace(/^[(（]|[)）]$/g, '').trim();
         cur.last = 'exampleKo';
       } else if (!cur.meanings.length) {
         addMeaning(cur, s);

@@ -340,3 +340,6 @@ textarea { resize: vertical; line-height: 1.5; }
 ol.help { padding-left: 20px; }
 .sense-refs { font-family: var(--font); font-size: 12px; color: var(--ink-3); }
 .src-mix, .src-wikt, .src-dm { color: #2f5e1d; border-color: #b9d3ac; background: #f1f7ec; }
+.prompt-copy { display: flex; align-items: center; gap: 10px; }
+.prompt-copy .btn { flex: none; margin-top: 0; }
+.prompt-text { white-space: pre-wrap; font-size: 12px; background: var(--bg); border: 1px solid var(--line); padding: 8px; margin: 0; width: 100%; }
