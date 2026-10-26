@@ -343,3 +343,8 @@ ol.help { padding-left: 20px; }
 .prompt-copy { display: flex; align-items: center; gap: 10px; }
 .prompt-copy .btn { flex: none; margin-top: 0; }
 .prompt-text { white-space: pre-wrap; font-size: 12px; background: var(--bg); border: 1px solid var(--line); padding: 8px; margin: 0; width: 100%; }
+.review-head { flex-wrap: wrap; }
+.review-head .detail-word { flex: 0 1 auto; }
+.review-head .link-btn { margin-left: auto; }
+.pos { white-space: nowrap; }
+.review-head .src-tag { white-space: normal; line-height: 1.4; }

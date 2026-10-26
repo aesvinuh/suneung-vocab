@@ -6,6 +6,7 @@
 //              recency      최근에 추가된 단어 보너스
 //            + error        오답률 보너스
 //            + staleness    마지막 출제 후 경과 시간 보너스
+//            + readd        이미 있는 단어를 다시 넣은 횟수 보너스
 //            + noteBonus)   (오답 노트 모드) 틀린 횟수 보너스
 //   단, 최근 cooldown.size 문제 안에 나온 단어는 후보에서 제외.
 // ─────────────────────────────────────────────────────────────
@@ -22,6 +23,10 @@ export const WEIGHT_CONFIG = {
 
   // 마지막 출제 후 fullDays일이 지나면 factor 전부. 한 번도 안 나온 단어도 factor 전부
   staleness: { factor: 3, fullDays: 10 },
+
+  // 이미 있는 단어를 다시 넣으면 1회당 perTime (최대 maxCount회까지),
+  // 마지막으로 다시 넣은 뒤 halfLifeDays마다 절반으로 줄어듦
+  readd: { perTime: 1.5, maxCount: 3, halfLifeDays: 7 },
 
   // 방금 나온 단어는 최소 size문제 동안 다시 안 나옴 (단어 수가 적으면 자동 축소)
   cooldown: { size: 5 },
@@ -65,11 +70,16 @@ export function weightParts(word, { now = Date.now(), mode = 'normal' } = {}) {
   const sinceDays = s.lastShownAt ? (now - s.lastShownAt) / DAY : Infinity;
   const staleness = c.staleness.factor * Math.min(1, sinceDays / c.staleness.fullDays);
 
+  const r = word.readd || { count: 0, lastAt: null };
+  const readd = r.count && r.lastAt
+    ? c.readd.perTime * Math.min(r.count, c.readd.maxCount) * Math.pow(0.5, Math.max(0, now - r.lastAt) / DAY / c.readd.halfLifeDays)
+    : 0;
+
   const noteBonus =
     mode === 'note' ? c.wrongNote.perWrong * Math.min(s.wrong, c.wrongNote.maxWrong) : 0;
 
-  const raw = recency + error + staleness + noteBonus;
-  return { recency, error, staleness, noteBonus, total: Math.max(c.minWeight, raw) };
+  const raw = recency + error + staleness + readd + noteBonus;
+  return { recency, error, staleness, readd, noteBonus, total: Math.max(c.minWeight, raw) };
 }
 
 export function computeWeight(word, opts) {

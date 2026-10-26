@@ -58,6 +58,7 @@ export function normalizeWord(input, now = Date.now()) {
     updatedAt: input.updatedAt || now,
     sources: { ...(input.sources || {}) }, // 칸별 출처: mw | fd | ai | user
     stats: { ...emptyStats(), ...(input.stats || {}) },
+    readd: { count: 0, lastAt: null, ...(input.readd || {}) }, // 이미 있는 단어를 다시 넣은 횟수 (가중치 ↑)
     note: { ...emptyNote(), ...(input.note || {}), confusedWith: { ...(input.note?.confusedWith || {}) } },
   };
 }

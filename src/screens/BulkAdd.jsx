@@ -3,6 +3,7 @@ import { useVocab } from '../store/VocabContext.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import { parseBulk } from '../lib/parse.js';
 import { POS_LABEL } from '../lib/word.js';
+import { reinforce } from '../lib/autofill.js';
 
 const SAMPLE = `reluctant (형)
 꺼리는, 마지못해 하는
@@ -42,7 +43,7 @@ const FIELDS = [
 ];
 
 export default function BulkAdd() {
-  const { words, addWords } = useVocab();
+  const { words, addWords, saveWord } = useVocab();
   const [text, setText] = useState('');
   const [result, setResult] = useState(null);
   const [showHelp, setShowHelp] = useState(false);
@@ -58,11 +59,21 @@ export default function BulkAdd() {
   };
   const parsed = useMemo(() => parseBulk(text, words), [text, words]);
   const toAdd = parsed.rows.filter((r) => !r.duplicate);
-  const dupCount = parsed.rows.length - toAdd.length;
+  // 이미 있는 단어: 비어 있는 칸만 채우고 더 자주 나오게 (같은 글 안의 반복은 건너뜀)
+  const again = useMemo(
+    () =>
+      parsed.rows
+        .filter((r) => r.existingId && !r.repeat)
+        .map((r) => ({ row: r, ...reinforce(words.find((w) => w.id === r.existingId), r.data) })),
+    [parsed, words],
+  );
+  const againByLine = new Map(again.map((a) => [a.row.line, a]));
+  const total = toAdd.length + again.length;
 
   const submit = async () => {
     await addWords(toAdd.map((r) => r.data));
-    setResult({ added: toAdd.length, skipped: dupCount });
+    for (const a of again) await saveWord(a.word);
+    setResult({ added: toAdd.length, again: again.length, filled: again.filter((a) => a.filled.length).length });
     setText('');
   };
 
@@ -91,6 +102,7 @@ export default function BulkAdd() {
             <li>헷갈리면 머리말을 붙이세요: <code>뜻:</code> <code>뉘앙스:</code> <code>예문:</code> <code>해석:</code> <code>품사:</code> <code>유의어:</code> <code>반의어:</code></li>
             <li>한 줄로 쓰기: <code>vivid - 생생한</code> 또는 <code>단어 | 뜻 | 뉘앙스 | 예문 | 해석</code> (엑셀에서 복사한 표도 돼요)</li>
             <li>단어만 죽 나열하면 뜻 없는 '미완성' 단어로 들어가요.</li>
+            <li>이미 있는 단어를 다시 넣으면 더 자주 나오게 하고, 비어 있던 칸만 채워요 (직접 쓴 내용은 그대로).</li>
             <li>표는 첫 줄(단어 | 품사 | 뜻 | 예문 | 해석 …)의 순서를 따라요. 예문 뒤 괄호 속 한국어는 해석으로 나눠요.</li>
           </ul>
           <pre className="prompt-text">{AI_PROMPT}</pre>
@@ -103,15 +115,17 @@ export default function BulkAdd() {
 
       {result && (
         <p className="notice ok">
-          {result.added}개 추가{result.skipped > 0 && `, 이미 있는 단어 ${result.skipped}개 건너뜀`}
+          {result.added}개 추가
+          {result.again > 0 && ` · 이미 있던 ${result.again}개는 더 자주 나오게 했어요`}
+          {result.filled > 0 && ` (그중 ${result.filled}개는 빈 칸도 채움)`}
         </p>
       )}
 
       {text.trim() && (
         <section className="stack">
           <p className="muted">
-            단어 {parsed.rows.length}개 인식 · 추가 {toAdd.length}개
-            {dupCount > 0 && ` · 이미 있음 ${dupCount}개`}
+            단어 {parsed.rows.length}개 인식 · 새로 추가 {toAdd.length}개
+            {again.length > 0 && ` · 이미 있음 ${again.length}개(더 자주 출제)`}
             {parsed.errors.length > 0 && ` · 확인 필요 ${parsed.errors.length}줄`}
           </p>
           {parsed.errors.map((e) => (
@@ -120,11 +134,17 @@ export default function BulkAdd() {
             </p>
           ))}
           {parsed.rows.map((r) => (
-            <div key={r.line} className={'review-card' + (r.duplicate ? ' saved' : '')}>
+            <div key={r.line} className={'review-card' + (r.repeat ? ' saved' : '')}>
               <div className="review-head">
                 <strong className="detail-word">{r.data.word}</strong>
                 {r.data.pos && <span className="pos">{POS_LABEL[r.data.pos]}</span>}
-                {r.duplicate && <span className="src-tag src-user">이미 있음 · 건너뜀</span>}
+                {r.repeat && <span className="src-tag src-user">위에 이미 있음 · 건너뜀</span>}
+                {againByLine.has(r.line) && (
+                  <span className="src-tag src-ai">
+                    이미 있는 단어 · 더 자주 출제
+                    {againByLine.get(r.line).filled.length > 0 && ` · 빈 칸 ${againByLine.get(r.line).filled.length}개 채움`}
+                  </span>
+                )}
               </div>
               <dl className="filled">
                 {FIELDS.map(([k, label]) => {
@@ -145,8 +165,11 @@ export default function BulkAdd() {
             </div>
           ))}
           <div className="sticky-actions">
-            <button className="btn primary block" disabled={toAdd.length === 0} onClick={submit}>
-              {toAdd.length}개 추가
+            <button className="btn primary block" disabled={total === 0} onClick={submit}>
+              {toAdd.length > 0 && `${toAdd.length}개 추가`}
+              {toAdd.length > 0 && again.length > 0 && ' · '}
+              {again.length > 0 && `${again.length}개 다시 넣기`}
+              {total === 0 && '추가할 단어 없음'}
             </button>
           </div>
         </section>

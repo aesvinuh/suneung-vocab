@@ -34,6 +34,7 @@ export default function EditWord({ id }) {
       <section className="meta-box">
         <p>
           추가 {new Date(word.createdAt).toLocaleDateString()} · 출제 {s.shown} · 정답 {s.correct} · 오답 {s.wrong}
+          {word.readd.count > 0 && ` · 다시 넣음 ${word.readd.count}회`}
         </p>
         <p>
           마지막 출제 {s.lastShownAt ? new Date(s.lastShownAt).toLocaleString() : '-'} · 마지막 오답 {formatDate(s.lastWrongAt)}
@@ -43,6 +44,7 @@ export default function EditWord({ id }) {
         </p>
         <p className="muted">
           현재 출제 가중치 {wp.total.toFixed(2)} = 최근추가 {wp.recency.toFixed(1)} + 오답률 {wp.error.toFixed(1)} + 경과 {wp.staleness.toFixed(1)}
+          {wp.readd > 0 && ` + 다시 넣음 ${wp.readd.toFixed(1)}`}
         </p>
       </section>
       <button className="btn danger block" onClick={remove}>

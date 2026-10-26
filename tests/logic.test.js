@@ -75,3 +75,22 @@ test('오답 노트 등록과 졸업', () => {
   r = applyAnswer(r.word, { correct: false, mode: 'note' });
   assert.ok(r.word.note.inNote && r.entered);
 });
+
+test('이미 있는 단어를 다시 넣으면 가중치가 조금 오르고 시간이 지나면 줄어듦', async () => {
+  const { reinforce } = await import('../src/lib/autofill.js');
+  const { weightParts } = await import('../src/lib/weights.js');
+  const now = Date.now();
+  const base = normalizeWord({ word: 'assume', meanings: '', createdAt: now - 60 * 86400000, stats: { shown: 10, correct: 10, wrong: 0, lastShownAt: now } });
+  const once = reinforce(base, { meanings: ['가정하다'], example: 'They assume it.', pos: 'v' }, now);
+  assert.deepEqual(once.word.meanings, ['가정하다']); // 비어 있던 칸 채움
+  assert.deepEqual(once.filled.sort(), ['example', 'meanings', 'pos']);
+  assert.equal(once.word.readd.count, 1);
+  const twice = reinforce(once.word, { meanings: ['다른 뜻'] }, now).word;
+  assert.deepEqual(twice.meanings, ['가정하다']); // 이미 있는 뜻은 그대로
+  const w0 = weightParts(base, { now }).total;
+  const w1 = weightParts(once.word, { now }).total;
+  const w2 = weightParts(twice, { now }).total;
+  assert.ok(w1 > w0 && w2 > w1, `${w0} < ${w1} < ${w2}`);
+  assert.equal(weightParts(twice, { now }).readd, 3); // 1.5 × 2회
+  assert.equal(weightParts(twice, { now: now + 7 * 86400000 }).readd, 1.5); // 7일 뒤 절반
+});

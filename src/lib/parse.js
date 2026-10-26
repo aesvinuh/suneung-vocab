@@ -1,8 +1,11 @@
 // 일괄 추가용 텍스트 파서. 직접 정리한 메모나 Claude·ChatGPT가 정리해 준 글을 붙여 넣으면 단어별로 칸을 나눈다.
 //
-// 1) 표 형식: 단어 | 뜻 | 뉘앙스 | 예문 | 예문 해석 [| 품사 | 유의어 | 반의어]
+// 1) 표 형식: 단어 | 품사 | 뜻 (| 예문 | 해석 …) — 칸 순서는 자유. 내용을 보고 판단한다
+//    (품사 이름 = 품사, 영어 문장 = 예문, 첫 한국어 = 뜻, 예문 뒤 한국어 = 해석, 영어 단어 목록 = 유의어)
 //    - 마크다운 표(| … |), 엑셀·구글시트·채팅 화면에서 복사한 표(탭 구분) 모두 가능
 //    - 첫 줄이 '단어 | 품사 | 뜻 | 예문 | 해석' 같은 제목 줄이면 그 순서를 따른다
+//    - 표 줄 아래에 예문·해석 줄이 이어져도 그 단어에 붙는다
+//    - 'settlement (← settlements)'의 괄호는 메모로, '(반의: distributive)'는 반의어로 옮긴다
 //
 // 2) 여러 줄 형식: 단어 줄로 시작, 그 아래 줄들이 그 단어의 정보
 //      ### 1. reluctant (형용사)
@@ -44,7 +47,6 @@ const FIELD_NAMES = [
 ];
 const fieldOf = (name) => FIELD_NAMES.find(([, re]) => re.test(name.trim()))?.[0] || null;
 const LABEL_RE = /^([^:：]{1,20}?)\s*[:：]\s*(.*)$/;
-const DEFAULT_COLUMNS = ['word', 'meanings', 'nuance', 'example', 'exampleKo', 'pos', 'synonyms', 'antonyms'];
 
 const hangul = (s) => (s.match(/[가-힣]/g) || []).length;
 const latin = (s) => (s.match(/[A-Za-z]/g) || []).length;
@@ -77,10 +79,22 @@ export function splitExampleKo(s) {
 }
 
 // "reluctant (형)", "reluctant [adj]", "reluctant a." → { word, pos }
+// "settlement (← settlements)" → { word: 'settlement', note: '본문 형태: settlements' }
 function splitHeadPos(s) {
   const m = s.match(/^(.*?)\s*[([]\s*([^)\]]+)\s*[)\]]\s*$/) || s.match(/^(.*?)\s+([a-z]{1,4}\.)$/i);
-  if (m && parsePos(m[2])) return { word: m[1].trim(), pos: parsePos(m[2]) };
-  return { word: s.trim(), pos: '' };
+  if (m && parsePos(m[2])) return { word: m[1].trim(), pos: parsePos(m[2]), note: '' };
+  if (m && /^[A-Za-z]/.test(m[1]) && !/[.?!]$/.test(m[1].trim())) {
+    return { word: m[1].trim(), pos: '', note: m[2].trim().replace(/^[←<]-?\s*/, '본문 형태: ') };
+  }
+  return { word: s.trim(), pos: '', note: '' };
+}
+
+function startRecord(line, head) {
+  const rec = emptyRecord(line);
+  rec.word = head.word;
+  rec.pos = head.pos;
+  if (head.note) rec.nuance.push(head.note);
+  return rec;
 }
 
 // 뜻 앞에 붙은 품사 표시: "(형) 꺼리는", "[동] 줄이다", "adj. 꺼리는"
@@ -94,10 +108,29 @@ function emptyRecord(line) {
   return { line, word: '', pos: '', meanings: [], nuance: [], example: '', exampleKo: '', synonyms: [], antonyms: [], last: null };
 }
 
+// 뜻 끝의 설명 괄호 → 메모 (반의:/유의: 는 반의어·유의어 칸에도)
+// 예: "통합적인 (반의: distributive 분배적인)", "상충하다 (명사는 앞, 동사는 뒤에 강세)"
+// "(책임·역할을) 맡다"처럼 앞에 붙은 짧은 괄호는 뜻의 일부로 둔다
+function takeTrailingNotes(rec, text) {
+  let t = text.trim();
+  let m;
+  while ((m = t.match(/\s*[(（]([^()（）]*)[)）]\s*$/)) && m.index > 0 && (/[:：,]|반의|반대|유의|동의|참고|cf\b|주의|강세/.test(m[1]) || m[1].length > 12)) {
+    const note = m[1].trim();
+    const rel = note.match(/^(반의어?|반대말|유의어?|동의어?)\s*[:：]?\s*(.*)$/);
+    if (rel) {
+      const words = rel[2].match(/[A-Za-z][A-Za-z'’-]*(?: [A-Za-z][A-Za-z'’-]*)*/g) || [];
+      (/^반/.test(rel[1]) ? rec.antonyms : rec.synonyms).push(...words);
+    }
+    rec.nuance.unshift(note);
+    t = t.slice(0, m.index).trim();
+  }
+  return t;
+}
+
 function addMeaning(rec, text) {
   const { pos, text: t } = splitMeaningPos(text);
   if (pos && !rec.pos) rec.pos = pos;
-  rec.meanings.push(...splitList(t));
+  rec.meanings.push(...splitList(takeTrailingNotes(rec, t)).filter((x) => !parsePos(x)));
 }
 
 function addExample(rec, text) {
@@ -153,17 +186,43 @@ function headerColumns(cells) {
   return fields.includes('word') && known >= Math.max(2, cells.filter(Boolean).length / 2) ? fields : null;
 }
 
+// 제목 줄이 있는 표: 그 순서대로
 function parseTableRow(cells, columns, line) {
   const rec = emptyRecord(line);
   cells.forEach((cell, i) => {
     const field = columns[i];
     if (!cell || !field || field === 'skip') return;
-    if (field === 'word') {
-      const head = splitHeadPos(cleanLine(cell));
-      rec.word = head.word;
-      if (head.pos && !rec.pos) rec.pos = head.pos;
-    } else putField(rec, field, cell);
+    if (field !== 'word') return putField(rec, field, cell);
+    const h = splitHeadPos(cleanLine(cell));
+    rec.word = h.word;
+    if (h.pos && !rec.pos) rec.pos = h.pos;
+    if (h.note) rec.nuance.unshift(h.note);
   });
+  return rec;
+}
+
+// 제목 줄이 없는 표: 첫 칸 = 단어, 나머지는 내용으로 판단
+// 'conflict | 명사 | 갈등, 충돌 / 동사 | 상충하다'처럼 품사가 여러 개여도 뜻을 모두 모은다
+function inferTableRow(cells, line) {
+  const tokens = cells.flatMap((c) => c.split(/\s+\/\s+/)).map((t) => t.trim()).filter(Boolean);
+  if (!tokens.length) return emptyRecord(line);
+  const rec = startRecord(line, splitHeadPos(cleanLine(tokens[0])));
+  let afterPos = false;
+  for (const t of tokens.slice(1)) {
+    const pos = parsePos(t);
+    if (pos) {
+      if (!rec.pos) rec.pos = pos;
+      afterPos = true;
+      continue;
+    }
+    if (isEnglishSentence(t) || (hangul(t) && splitExampleKo(t))) addExample(rec, t);
+    else if (!hangul(t)) (rec.synonyms.length ? rec.antonyms : rec.synonyms).push(...splitList(t));
+    else if (afterPos || !rec.meanings.length) addMeaning(rec, t);
+    else if (rec.example && !rec.exampleKo) rec.exampleKo = t;
+    else rec.nuance.push(t);
+    afterPos = false;
+  }
+  rec.last = rec.exampleKo ? 'exampleKo' : rec.example ? 'example' : 'meanings';
   return rec;
 }
 
@@ -196,8 +255,8 @@ export function parseBulk(text, existingWords = []) {
         columns = header;
         return;
       }
-      const rec = parseTableRow(cells, columns || DEFAULT_COLUMNS, line);
-      if (rec.word) records.push(finish(rec));
+      const rec = columns ? parseTableRow(cells, columns, line) : inferTableRow(cells, line);
+      if (rec.word) cur = rec; // 아래 줄의 예문·해석이 이 단어에 붙도록
       else errors.push({ line, text: raw, reason: '단어 칸이 비어 있음' });
       return;
     }
@@ -220,10 +279,7 @@ export function parseBulk(text, existingWords = []) {
     if (field === 'word' && lm[2].trim()) {
       // "단어: reluctant"
       close();
-      const h = splitHeadPos(lm[2].trim());
-      cur = emptyRecord(line);
-      cur.word = h.word;
-      cur.pos = h.pos;
+      cur = startRecord(line, splitHeadPos(lm[2].trim()));
       return;
     }
 
@@ -231,9 +287,7 @@ export function parseBulk(text, existingWords = []) {
     const head = splitHeadPos(s);
     if (isHeadword(head.word)) {
       close();
-      cur = emptyRecord(line);
-      cur.word = head.word;
-      cur.pos = head.pos;
+      cur = startRecord(line, head);
       return;
     }
 
@@ -246,10 +300,7 @@ export function parseBulk(text, existingWords = []) {
     const beforeKo = inline ? inline[2].slice(0, inline[2].search(/[가-힣]/)).replace(/[([][^)\]]*[)\]]|\b[a-z]{1,4}\./gi, '') : '';
     if (inline && latin(beforeKo) === 0 && isHeadword(splitHeadPos(inline[1]).word) && isKorean(inline[2])) {
       close();
-      const h = splitHeadPos(inline[1]);
-      cur = emptyRecord(line);
-      cur.word = h.word;
-      cur.pos = h.pos;
+      cur = startRecord(line, splitHeadPos(inline[1]));
       addMeaning(cur, inline[2]);
       cur.last = 'meanings';
       return;
@@ -290,9 +341,10 @@ export function parseBulk(text, existingWords = []) {
   const seen = new Set();
   const rows = records.map((r) => {
     const key = r.data.word.toLowerCase();
-    const duplicate = seen.has(key) || existingWords.some((w) => sameWord(w.word, r.data.word));
+    const existing = existingWords.find((w) => sameWord(w.word, r.data.word));
+    const repeat = seen.has(key); // 붙여 넣은 글 안에서 두 번째로 나온 단어
     seen.add(key);
-    return { ...r, duplicate };
+    return { ...r, duplicate: repeat || !!existing, repeat, existingId: existing?.id || null };
   });
   return { rows, errors };
 }

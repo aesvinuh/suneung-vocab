@@ -4,22 +4,32 @@ import PageHeader from '../components/PageHeader.jsx';
 import WordForm from '../components/WordForm.jsx';
 import SenseChooser from '../components/SenseChooser.jsx';
 import { sameWord } from '../lib/word.js';
-import { buildDraft, choicesOf, lookup } from '../lib/autofill.js';
+import { buildDraft, choicesOf, lookup, reinforce } from '../lib/autofill.js';
 import { useOnline } from '../lib/useOnline.js';
 import { getKeys } from '../lib/apiKeys.js';
 
 // step: input → (loading) → choose(뜻이 여러 개일 때) → (loading) → preview → 저장 후 input
 export default function AddWord() {
-  const { words, addWords } = useVocab();
+  const { words, addWords, saveWord } = useVocab();
   const online = useOnline();
   const [step, setStep] = useState({ kind: 'input', initial: undefined });
   const [error, setError] = useState(null);
   const [recent, setRecent] = useState([]);
+  const [notice, setNotice] = useState(null);
 
   const dupOf = (text) => text.trim() && words.find((w) => sameWord(w.word, text));
 
   const save = async (f, sources = {}) => {
-    if (dupOf(f.word)) return false;
+    const dup = dupOf(f.word);
+    if (dup) {
+      // 이미 있는 단어: 비어 있는 칸만 채우고 더 자주 나오게
+      const { word: w, filled } = reinforce(dup, { ...f, meanings: f.meanings.split(/[,;/]/).map((x) => x.trim()).filter(Boolean) });
+      await saveWord({ ...w, sources: { ...w.sources, ...Object.fromEntries(filled.filter((k) => sources[k]).map((k) => [k, sources[k]])) } });
+      setNotice(`'${dup.word}'는 이미 있어서 더 자주 나오게 했어요${filled.length ? ` (빈 칸 ${filled.length}개 채움)` : ''}.`);
+      setStep({ kind: 'input', initial: undefined });
+      return true;
+    }
+    setNotice(null);
     const [w] = await addWords([{ ...f, sources }]);
     setRecent((r) => [w, ...r].slice(0, 5));
     setStep({ kind: 'input', initial: undefined });
@@ -30,7 +40,7 @@ export default function AddWord() {
   const startAutofill = async (word) => {
     const d = dupOf(word);
     if (d) {
-      setError(`'${d.word}'는 이미 있는 단어예요. 단어 목록에서 수정하거나, 미완성이면 일괄 자동 채우기를 써 주세요.`);
+      setError(`'${d.word}'는 이미 있는 단어예요. 그대로 '추가하고 계속'을 누르면 더 자주 나오게 돼요. 빈 칸 자동 채우기는 단어 목록의 '미완성 자동 채우기'로 할 수 있어요.`);
       return;
     }
     setError(null);
@@ -58,6 +68,7 @@ export default function AddWord() {
     <>
       <PageHeader title="단어 추가" back="/" right={<a href="#/bulk" className="link-btn">일괄 추가</a>} />
       {error && <p className="notice bad">{error}</p>}
+      {notice && <p className="notice ok">{notice}</p>}
 
       {step.kind === 'input' && (
         <>
@@ -73,8 +84,8 @@ export default function AddWord() {
               const d = dupOf(f.word);
               if (d)
                 return (
-                  <p className="hint warn">
-                    이미 있는 단어예요. <a href={`#/words/${d.id}`}>수정하러 가기</a>
+                  <p className="hint">
+                    이미 있는 단어예요. 추가하면 더 자주 나오게 하고 비어 있는 칸만 채워요. <a href={`#/words/${d.id}`}>수정하러 가기</a>
                   </p>
                 );
               if (f.word.trim() && !f.meanings.trim())

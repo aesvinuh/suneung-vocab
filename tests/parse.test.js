@@ -63,7 +63,7 @@ inevitable | 불가피한 | 중립·격식 | Change is inevitable. | 변화는 �
 frugal\t검소한\t긍정
 reluctant
 diminish`,
-    [{ word: 'Reluctant' }],
+    [{ id: 'r1', word: 'Reluctant' }],
   );
   const by = Object.fromEntries(rows.map((r) => [r.data.word, r]));
   assert.deepEqual(by.vivid.data.meanings, ['생생한', '선명한']);
@@ -73,6 +73,8 @@ diminish`,
   assert.deepEqual(by.inevitable.data.synonyms, ['unavoidable']);
   assert.equal(by.frugal.data.nuance, '긍정');
   assert.equal(by.reluctant.duplicate, true);
+  assert.equal(by.reluctant.repeat, false);
+  assert.equal(by.reluctant.existingId, 'r1');
   assert.deepEqual(by.diminish.data.meanings, []);
   assert.ok(by.diminish.warnings[0].includes('미완성'));
 });
@@ -148,4 +150,54 @@ test('표: 마크다운 표·복사한 표의 제목 줄 순서를 따름', () =
   // 채팅 화면의 표를 복사하면 탭으로 구분됨
   const tab = parseBulk('단어\t뜻\t예문\t예문 해석\nabate\t줄어들다\tThe storm abated.\t폭풍이 잦아들었다.');
   assert.deepEqual([tab.rows[0].data.meanings, tab.rows[0].data.example, tab.rows[0].data.exampleKo], [['줄어들다'], 'The storm abated.', '폭풍이 잦아들었다.']);
+});
+
+// 사용자가 실제로 Claude에게 받아 붙여 넣은 형식 (단어 | 품사 | 뜻 / 예문 / 해석)
+const USER_PASTE = `assume | 동사 | 가정하다, 추정하다; (책임·역할을) 맡다; (태도·성질을) 띠다
+Many negotiators assume that one side's gain must be the other side's loss.
+많은 협상가들은 한쪽의 이득이 반드시 다른 쪽의 손실이라고 가정한다.
+
+integrative | 형용사 | 통합적인, 통합하는 (반의: distributive 분배적인)
+An integrative approach looks for solutions that satisfy everyone's interests.
+통합적인 접근법은 모두의 이익을 충족하는 해결책을 찾는다.
+
+settlement (← settlements) | 명사 | 합의, 해결; 정착(지); 정산
+The two companies finally reached a settlement after months of talks.
+두 회사는 몇 달간의 협의 끝에 마침내 합의에 이르렀다.
+
+mutually | 부사 | 서로, 상호간에 (mutually exclusive: 상호 배타적인)
+They worked out a mutually beneficial agreement.
+그들은 서로에게 이로운 합의를 도출했다.
+
+conflict | 명사 | 갈등, 충돌 / 동사 | 상충하다, 충돌하다 (명사는 앞, 동사는 뒤에 강세)
+Conflict is not always harmful; it can lead to better decisions.
+갈등이 항상 해로운 것은 아니며, 더 나은 결정으로 이어질 수도 있다.
+
+contribute | 동사 | 기여하다, 공헌하다; 기부하다; (to) ~의 한 원인이 되다
+Poor communication often contributes to misunderstandings.
+부족한 의사소통은 흔히 오해의 한 원인이 된다.`;
+
+test('표 줄 + 아래 예문·해석 (실제 붙여 넣은 형식)', () => {
+  const { rows, errors } = parseBulk(USER_PASTE);
+  assert.equal(errors.length, 0);
+  const by = Object.fromEntries(rows.map((r) => [r.data.word, r.data]));
+  assert.deepEqual(Object.keys(by), ['assume', 'integrative', 'settlement', 'mutually', 'conflict', 'contribute']);
+  for (const d of Object.values(by)) {
+    assert.ok(d.meanings.length && d.example && d.exampleKo, d.word);
+  }
+  assert.equal(by.assume.pos, 'v');
+  assert.deepEqual(by.assume.meanings, ['가정하다', '추정하다', '(책임·역할을) 맡다', '(태도·성질을) 띠다']);
+  assert.equal(by.assume.example, "Many negotiators assume that one side's gain must be the other side's loss.");
+  assert.equal(by.assume.exampleKo, '많은 협상가들은 한쪽의 이득이 반드시 다른 쪽의 손실이라고 가정한다.');
+  assert.deepEqual(by.integrative.meanings, ['통합적인', '통합하는']);
+  assert.deepEqual(by.integrative.antonyms, ['distributive']);
+  assert.equal(by.integrative.nuance, '반의: distributive 분배적인');
+  assert.equal(by.settlement.nuance, '본문 형태: settlements');
+  assert.deepEqual(by.settlement.meanings, ['합의', '해결', '정착(지)', '정산']);
+  assert.deepEqual(by.mutually.meanings, ['서로', '상호간에']);
+  assert.equal(by.mutually.nuance, 'mutually exclusive: 상호 배타적인');
+  assert.equal(by.conflict.pos, 'n');
+  assert.deepEqual(by.conflict.meanings, ['갈등', '충돌', '상충하다', '충돌하다']);
+  assert.equal(by.conflict.nuance, '명사는 앞, 동사는 뒤에 강세');
+  assert.deepEqual(by.contribute.meanings, ['기여하다', '공헌하다', '기부하다', '(to) ~의 한 원인이 되다']);
 });

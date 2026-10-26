@@ -182,3 +182,10 @@ export function mergeMissing(word, draft) {
   }
   return { word: next, filled };
 }
+
+// 이미 있는 단어를 다시 넣었을 때: 비어 있는 칸만 채우고, 다시 넣은 횟수를 올려 더 자주 출제
+export function reinforce(word, data, now = Date.now()) {
+  const clean = Object.fromEntries(Object.entries(data).filter(([k]) => FILL_FIELDS.includes(k)));
+  const { word: merged, filled } = mergeMissing(word, { data: clean, sources: {} });
+  return { word: { ...merged, readd: { count: (word.readd?.count || 0) + 1, lastAt: now } }, filled };
+}
