@@ -7,10 +7,12 @@ import WordForm from '../components/WordForm.jsx';
 import { isIncomplete, POS_LABEL, TONE_LABEL } from '../lib/word.js';
 import { buildDraft, choicesOf, lookup, mergeMissing } from '../lib/autofill.js';
 import { getKeys } from '../lib/apiKeys.js';
+import { profileSummary } from '../lib/profile.js';
 import { useOnline } from '../lib/useOnline.js';
 
 const MAX_PER_RUN = 20;
 const FIELD_LABEL = {
+  profile: '뉘앙스 프로필 초안', related: '관련 표현',
   meanings: '뜻', pos: '품사', tone: '감정 톤', nuance: '뉘앙스', definition: '영영 뜻',
   example: '예문', exampleKo: '예문 해석', synonyms: '유의어', antonyms: '반의어',
 };
@@ -224,7 +226,7 @@ function ReviewCard({ item, onToggle, onEdit, onSaveEdited }) {
               <dt>
                 {FIELD_LABEL[f]} <SourceTag source={word.sources[f]} />
               </dt>
-              <dd>{Array.isArray(word[f]) ? word[f].join(', ') : f === 'tone' ? TONE_LABEL[word[f]] : f === 'pos' ? POS_LABEL[word[f]] || word[f] : word[f]}</dd>
+              <dd>{Array.isArray(word[f]) ? word[f].join(', ') : f === 'tone' ? TONE_LABEL[word[f]] : f === 'profile' ? profileSummary(word.profile?.suggested) + ' (미확정)' : f === 'pos' ? POS_LABEL[word[f]] || word[f] : word[f]}</dd>
             </div>
           ))}
         </dl>

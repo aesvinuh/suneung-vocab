@@ -1,4 +1,5 @@
 // 단어 데이터 구조와 생성/정규화
+import { normalizeProfile } from './profile.js';
 
 export const POS_OPTIONS = [
   { value: 'n', label: '명사' },
@@ -63,6 +64,30 @@ export function normalizeWord(input, now = Date.now()) {
     stats: { ...emptyStats(), ...(input.stats || {}) },
     readd: { count: 0, lastAt: null, ...(input.readd || {}) }, // 이미 있는 단어를 다시 넣은 횟수 (가중치 ↑)
     note: { ...emptyNote(), ...(input.note || {}), confusedWith: { ...(input.note?.confusedWith || {}) } },
+    // 뉘앙스 프로필 (profile.js). null = 예전 데이터라 아직 변환 안 됨 → 설정의 데이터 정리에서 변환
+    profile: normalizeProfile(input.profile),
+    // '뉘앙스까지 떠오름'이라고 했는데 뉘앙스 문제를 틀린 '착각 단어' 기록
+    illusion: { count: 0, lastAt: null, ...(input.illusion || {}) },
+    // AI가 미리 만들어 둔 풀 (pools.js): 예문 풀, 헷갈리는 단어, 문법 정보
+    ai: normalizeAi(input.ai),
+  };
+}
+
+// AI 생성 콘텐츠 풀
+//  examples: [{ id, en, ko, why, uses, lastUsedAt }]  — why: 이 문장에서 이 단어가 맞는 이유
+//  userExample: { why, uses, lastUsedAt }              — 내가 입력한 원래 예문(word.example)의 사용 기록
+//  confusables: [{ word, pos, meanings[], forms{}, type, why, transitivity, pattern, level }]
+//  grammar: { transitivity, pattern, level, forms: { s, ed, en, ing } }
+export function normalizeAi(a) {
+  const x = a || {};
+  return {
+    examples: Array.isArray(x.examples) ? x.examples : [],
+    userExample: { why: '', uses: 0, lastUsedAt: null, ...(x.userExample || {}) },
+    confusables: Array.isArray(x.confusables) ? x.confusables : [],
+    grammar: x.grammar || null,
+    generatedAt: x.generatedAt || null,
+    examplesAt: x.examplesAt || null,
+    lastAttemptAt: x.lastAttemptAt || null,
   };
 }
 

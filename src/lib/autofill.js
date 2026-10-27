@@ -9,6 +9,7 @@ import { generateKorean, synthesizeMeanings } from './aiFill.js';
 import { findTarget } from './inflect.js';
 import { getKeys } from './apiKeys.js';
 import { POS_LABEL, splitList } from './word.js';
+import { emptyProfile, isConfirmed } from './profile.js';
 
 export const SOURCE_LABEL = {
   mw: 'Merriam-Webster',
@@ -160,6 +161,8 @@ export async function buildDraft(word, res, selectedIds) {
     put('tone', ai.tone, 'ai');
     put('nuance', ai.nuance, 'ai');
     put('related', ai.related, 'ai');
+    // 뉘앙스 프로필은 '초안'으로만 넣고, 확정은 사용자가 (프로필 확인 화면 또는 단어 수정)
+    data.profile = { ...emptyProfile(), suggested: ai.profile };
     if (!data.example) put('example', ai.example, 'ai');
     put('exampleKo', ai.exampleKo, 'ai');
   } catch (e) {
@@ -174,6 +177,11 @@ const isEmpty = (v) => (Array.isArray(v) ? v.length === 0 : !v);
 export function mergeMissing(word, draft) {
   const next = { ...word, sources: { ...(word.sources || {}) } };
   const filled = [];
+  // 확정 안 된 프로필이면 AI 초안만 붙임 (확정된 프로필은 절대 건드리지 않음)
+  if (draft.data.profile?.suggested && !isConfirmed(word) && !word.profile?.suggested) {
+    next.profile = { ...(word.profile || emptyProfile()), suggested: draft.data.profile.suggested };
+    filled.push('profile');
+  }
   for (const f of FILL_FIELDS) {
     if (isEmpty(word[f]) && !isEmpty(draft.data[f])) {
       next[f] = draft.data[f];

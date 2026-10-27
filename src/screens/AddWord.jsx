@@ -7,6 +7,7 @@ import { sameWord } from '../lib/word.js';
 import { buildDraft, choicesOf, lookup, reinforce } from '../lib/autofill.js';
 import { useOnline } from '../lib/useOnline.js';
 import { getKeys } from '../lib/apiKeys.js';
+import { profileSummary } from '../lib/profile.js';
 
 // step: input → (loading) → choose(뜻이 여러 개일 때) → (loading) → preview → 저장 후 input
 export default function AddWord() {
@@ -30,7 +31,8 @@ export default function AddWord() {
       return true;
     }
     setNotice(null);
-    const [w] = await addWords([{ ...f, sources }]);
+    const profile = step.kind === 'preview' ? step.data.profile : undefined; // 자동 채우기의 AI 프로필 초안
+    const [w] = await addWords([{ ...f, sources, ...(profile ? { profile } : {}) }]);
     setRecent((r) => [w, ...r].slice(0, 5));
     setStep({ kind: 'input', initial: undefined });
     setError(null);
@@ -117,6 +119,11 @@ export default function AddWord() {
       {step.kind === 'preview' && (
         <section>
           <p className="notice">자동으로 채운 내용이에요. 확인하고 고친 뒤 저장하세요. 고친 칸은 '직접 입력'으로 표시돼요.</p>
+          {step.data.profile?.suggested && (
+            <p className="notice">
+              AI가 뉘앙스 프로필 초안도 만들었어요: <b>{profileSummary(step.data.profile.suggested)}</b>. 저장한 뒤 홈의 '프로필 확인'이나 단어 수정에서 확정하면 뉘앙스 문제에 나와요.
+            </p>
+          )}
           {step.warnings.map((w) => (
             <p key={w} className="notice bad">
               {w}

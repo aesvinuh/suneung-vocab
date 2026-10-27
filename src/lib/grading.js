@@ -3,10 +3,11 @@ import { GRADUATION } from './weights.js';
 
 /**
  * @param word 정답 단어
- * @param result { correct: boolean, partial?: boolean, chosenWordId?: string|null, mode: 'normal'|'note' }
+ * @param result { correct: boolean, partial?: boolean, chosenWordId?: string|null, mode: 'normal'|'note',
+ *                 illusion?: boolean — '뉘앙스까지 떠오름'을 고른 뒤의 뉘앙스 문제라면 true (틀리면 착각 단어로 기록) }
  * @returns { word, graduated, entered }
  */
-export function applyAnswer(word, { correct, partial = false, chosenWordId = null, mode = 'normal' }, now = Date.now()) {
+export function applyAnswer(word, { correct, partial = false, chosenWordId = null, mode = 'normal', illusion = false }, now = Date.now()) {
   const stats = {
     ...word.stats,
     shown: word.stats.shown + 1,
@@ -40,5 +41,6 @@ export function applyAnswer(word, { correct, partial = false, chosenWordId = nul
     }
   }
 
-  return { word: { ...word, stats, note }, graduated, entered };
+  const ill = illusion && !correct ? { count: (word.illusion?.count || 0) + 1, lastAt: now } : word.illusion;
+  return { word: { ...word, stats, note, illusion: ill }, graduated, entered, illusion: illusion && !correct };
 }

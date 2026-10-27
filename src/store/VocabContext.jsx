@@ -4,11 +4,16 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import * as db from '../db/db.js';
 import { normalizeWord, sameWord, todayKey } from '../lib/word.js';
 import { deviceId, getToken, mergeData, syncOnce } from '../lib/sync.js';
+import { emptyProfile } from '../lib/profile.js';
+import { fillPools } from '../lib/pools.js';
+import { getKeys } from '../lib/apiKeys.js';
 
 const VocabContext = createContext(null);
 
 const SYNC_DEBOUNCE = 15_000; // 마지막 변경 후 15초 뒤 자동 업로드
 const SYNC_MIN_GAP = 30_000; // 앱으로 돌아왔을 때 너무 잦은 동기화 방지
+const POOL_START_DELAY = 5_000; // 앱을 열고 동기화가 끝날 즈음 부족한 AI 풀 채우기 시작
+const POOL_AFTER_ADD = 8_000; // 단어 추가 후 잠시 뒤 그 단어들의 풀 채우기
 
 export function VocabProvider({ children }) {
   const [words, setWords] = useState([]);
@@ -16,6 +21,10 @@ export function VocabProvider({ children }) {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(null);
   const [sync, setSync] = useState({ state: getToken() ? 'idle' : 'off', at: null, message: '' });
+  const [pool, setPool] = useState({ running: false, done: 0, total: 0, message: '' });
+  const poolRunning = useRef(false);
+  const poolTimer = useRef(null);
+  const pendingPoolIds = useRef(new Set());
   // 학습 화면에서 setState 반영 전에도 최신 값을 읽기 위한 ref
   const wordsRef = useRef([]);
   const dailyRef = useRef({});
@@ -131,12 +140,25 @@ export function VocabProvider({ children }) {
   const addWords = useCallback(
     async (inputs) => {
       const now = Date.now();
-      const created = inputs.map((x, i) => normalizeWord({ ...x, id: undefined, createdAt: now + i, updatedAt: now + i }, now));
+      const created = inputs.map((x, i) =>
+        normalizeWord({ ...x, id: undefined, profile: x.profile || emptyProfile(), createdAt: now + i, updatedAt: now + i }, now),
+      );
       await db.putWords(created);
       commitWords([...wordsRef.current, ...created]);
       scheduleSync();
+      // 추가한 단어의 AI 풀은 잠시 뒤 백그라운드로 (키가 있고 온라인일 때)
+      if (getKeys().claude) {
+        created.forEach((w) => pendingPoolIds.current.add(w.id));
+        clearTimeout(poolTimer.current);
+        poolTimer.current = setTimeout(() => {
+          const ids = [...pendingPoolIds.current];
+          pendingPoolIds.current.clear();
+          fillPoolsNow({ ids });
+        }, POOL_AFTER_ADD);
+      }
       return created;
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [commitWords, scheduleSync],
   );
 
@@ -151,6 +173,44 @@ export function VocabProvider({ children }) {
     },
     [commitWords, scheduleSync],
   );
+
+  // ── AI 콘텐츠 풀 채우기 (백그라운드, 학습 중에는 저장된 것만 사용) ──
+  // ids: 이 단어들만 (없으면 부족한 단어 전체, 하루 안에 시도한 단어는 건너뜀)
+  const fillPoolsNow = useCallback(
+    async ({ ids = null } = {}) => {
+      if (poolRunning.current) return;
+      if (!getKeys().claude) {
+        setPool({ running: false, done: 0, total: 0, message: 'Claude API 키가 없어 AI 풀은 만들지 않아요.' });
+        return;
+      }
+      if (!navigator.onLine) {
+        setPool((p) => ({ ...p, running: false, message: '오프라인이라 나중에 채워요.' }));
+        return;
+      }
+      poolRunning.current = true;
+      setPool({ running: true, done: 0, total: 0, message: '' });
+      try {
+        const r = await fillPools({
+          getWords: () => wordsRef.current,
+          saveWord,
+          ids,
+          onProgress: ({ done, total }) => setPool({ running: true, done, total, message: '' }),
+        });
+        setPool({ running: false, done: r.done, total: r.total, message: r.stopped || (r.total ? `${r.done}개 단어의 풀을 채웠어요.` : '채울 풀이 없어요.') });
+      } finally {
+        poolRunning.current = false;
+      }
+    },
+    [saveWord],
+  );
+
+  // 앱을 열 때 부족한 AI 풀을 백그라운드로 채움 (키 + 온라인일 때만)
+  useEffect(() => {
+    if (!ready || !getKeys().claude) return;
+    const t = setTimeout(() => fillPoolsNow(), POOL_START_DELAY);
+    return () => clearTimeout(t);
+  }, [ready, fillPoolsNow]);
+
 
   const deleteWord = useCallback(
     async (id) => {
@@ -226,8 +286,8 @@ export function VocabProvider({ children }) {
   }, [commitWords, commitDaily, addTombstones, scheduleSync]);
 
   const value = useMemo(
-    () => ({ ready, error, words, daily, wordsRef, sync, syncNow, addWords, saveWord, deleteWord, recordAnswer, importData, clearAll }),
-    [ready, error, words, daily, sync, syncNow, addWords, saveWord, deleteWord, recordAnswer, importData, clearAll],
+    () => ({ ready, error, words, daily, wordsRef, sync, syncNow, pool, fillPoolsNow, addWords, saveWord, deleteWord, recordAnswer, importData, clearAll }),
+    [ready, error, words, daily, sync, syncNow, pool, fillPoolsNow, addWords, saveWord, deleteWord, recordAnswer, importData, clearAll],
   );
   return <VocabContext.Provider value={value}>{children}</VocabContext.Provider>;
 }

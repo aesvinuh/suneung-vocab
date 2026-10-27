@@ -3,6 +3,8 @@
 // (Anthropic API는 anthropic-dangerous-direct-browser-access 헤더로 CORS를 허용 → 중계 서버 불필요).
 // SDK는 자동 채우기를 처음 쓸 때만 불러온다(dynamic import) → 첫 화면 로딩에 영향 없음.
 
+import { canRequest, getDailyLimit, recordUsage } from './usage.js';
+
 export const AI_MODEL = 'claude-opus-5-5';
 
 const SYSTEM = `너는 한국 고등학생의 수능 영어 어휘 학습 앱에 들어갈 단어 해설을 쓴다.
@@ -16,7 +18,14 @@ const SYSTEM = `너는 한국 고등학생의 수능 영어 어휘 학습 앱에
 - nuance: 2~3문장. 긍정·부정, 격식 정도(일상적/격식체), 강도를 짚고, 고른 synonyms가 있으면 그중 1~2개와의 차이를 한 문장으로 쓴다. 없으면 유의어 비교는 쓰지 않는다. 숙어·반의어·활용형·발음 정보는 nuance에 넣지 않는다.
 - related: [선택한 뜻풀이]나 사전 예문에 실제로 나온, 이 뜻과 관련된 숙어·연어 0~2개를 "표현: 한국어 뜻" 형식으로, 여러 개면 " · "로 구분. 자료에 없으면 빈 문자열.
 - example: [예문]이 비어 있을 때만, 선택한 뜻풀이에 맞는 수능 수준의 영어 예문 한 문장을 쓴다. [예문]이 있으면 빈 문자열.
-- exampleKo: 최종 예문([예문] 또는 네가 쓴 example)의 자연스러운 한국어 해석.`;
+- exampleKo: 최종 예문([예문] 또는 네가 쓴 example)의 자연스러운 한국어 해석.
+- profile: 이 뜻의 뉘앙스 프로필 초안 (사전 자료 근거)
+  · direction: 이 단어가 담는 평가 방향 positive / negative / neutral / context(문맥에 따라 다름)
+  · role: 글 속 역할 signal(흐름 신호어: 대조·인과·양보·강조를 알림) / evaluative(필자의 태도·평가를 드러냄) / content(대상을 가리킴)
+  · signal: role이 signal이면 contrast / cause / concession / emphasis, 아니면 none
+  · intensity: weak / medium / strong
+  · keywords: 느낌 키워드 1~3개 (짧은 한국어, 예: "마지못함", "소극적")
+  · diff: 고른 synonyms가 있으면 그 단어들과의 차이 한 문장, 없으면 빈 문자열`;
 
 const MERGE_SYSTEM = `너는 여러 영영사전의 뜻풀이를 종합해 수능 단어장의 뜻 목록을 만든다.
 입력은 [MW](Merriam-Webster 학습자 사전), [WK](Wiktionary), [FD](Free Dictionary)의 뜻풀이와 예문이다.
@@ -54,6 +63,7 @@ const loadSdk = () =>
 
 // 구조화된 응답 한 번 받기 (거절 시 서버에서 다른 모델로 자동 재시도)
 async function ask({ apiKey, system, user, schema }) {
+  if (!canRequest()) throw new Error(`오늘 AI 요청 한도(${getDailyLimit()}회)를 다 썼어요. 설정에서 한도를 바꾸거나 내일 다시 시도해 주세요.`);
   const { Anthropic, betaZodOutputFormat } = await loadSdk();
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true, maxRetries: 1 });
   let response;
@@ -70,6 +80,7 @@ async function ask({ apiKey, system, user, schema }) {
   } catch (e) {
     throw new Error(describeError(e, Anthropic));
   }
+  recordUsage(response.usage);
   if (response.stop_reason === 'refusal') throw new Error('AI가 이 단어의 해설 작성을 거절했어요. 직접 입력해 주세요.');
   if (!response.parsed_output) throw new Error('AI 응답을 읽지 못했어요. 다시 시도해 주세요.');
   return response.parsed_output;
@@ -117,6 +128,7 @@ export async function generateKorean(input, apiKey) {
     related: z.string(),
     example: z.string(),
     exampleKo: z.string(),
+    profile: ProfileSchema(z),
   });
   const out = await ask({ apiKey, system: SYSTEM, user: buildUserMessage(input), schema: Schema });
   // 후보 목록에 있는 단어만 인정
@@ -129,8 +141,99 @@ export async function generateKorean(input, apiKey) {
     meanings: out.meanings.map((m) => m.trim()).filter(Boolean).slice(0, 3),
     synonyms: pick(out.synonyms, input.synonyms || [], 4),
     antonyms: pick(out.antonyms, input.antonyms || [], 3),
+    profile: cleanProfile(out.profile),
   };
 }
+
+const ProfileSchema = (z) =>
+  z.object({
+    direction: z.enum(['positive', 'negative', 'neutral', 'context']),
+    role: z.enum(['signal', 'evaluative', 'content']),
+    signal: z.enum(['contrast', 'cause', 'concession', 'emphasis', 'none']),
+    intensity: z.enum(['weak', 'medium', 'strong']),
+    keywords: z.array(z.string()),
+    diff: z.string(),
+  });
+const cleanProfile = (p) => ({ ...p, signal: p.signal === 'none' ? '' : p.signal, keywords: p.keywords.map((k) => k.trim()).filter(Boolean).slice(0, 3) });
+
+// ── 콘텐츠 풀 일괄 생성 (여러 단어를 요청 한 번에) ───────────────────
+
+const POOL_SYSTEM = `너는 수능 영어 어휘 학습 앱의 문제 재료를 만든다. 입력된 단어마다 [필요] 항목만 채우고, 필요 없는 항목은 빈 배열·빈 문자열로 둔다.
+각 단어의 [뜻]·[영영]·[내 예문] 자료를 근거로, 그 뜻으로만 쓴다.
+
+- examples: 수능 지문 스타일(학술·사회·과학·심리 등)의 영어 예문. 15~30단어, 그 단어(필요하면 활용형)를 정확히 한 번 쓴다. 활용형(-s, -ed, -ing 등)을 골고루 섞는다.
+  · ko: 자연스러운 한국어 해석
+  · why: 이 문장에서 왜 이 단어가 맞는지, 문맥의 단서를 짚어 한국어 한 문장
+- userWhy: [내 예문]이 있으면 그 문장에서 이 단어가 맞는 이유 한 문장, 없으면 빈 문자열
+- grammar: transitivity(vt 타동사 / vi 자동사 / both / none 동사 아님), pattern(자주 오는 뒤 구조: "to부정사", "that절", "전치사 to" 등, 없으면 빈 문자열),
+  level(1 기초 ~ 5 고난도 수능 어휘), forms(s, ed, en(과거분사), ing — 동사가 아니면 빈 문자열)
+- confusables: 학생이 이 단어와 헷갈릴 만한 다른 영어 단어 8개. 반드시 이 단어와 같은 품사.
+  · pos: 품사를 n / v / adj / adv 중 하나로
+  · type: spelling(철자 혼동) / meaning(의미 혼동) / range(같은 의미 범위의 다른 단어)
+  · meanings: 한국어 뜻 1~3개 — 이 단어의 한국어 뜻과 같은 형태로 (동사면 "~하다", 형용사면 "~한/~적인")
+  · forms: 위 grammar.forms와 같은 형식, transitivity·pattern·level도 같은 기준
+  · why: 왜 헷갈리는지와 정답 단어와의 차이를 한국어 한 문장
+  · [제외]에 있는 단어와 정답 단어 자신은 쓰지 않는다
+- profile: 뉘앙스 프로필 초안
+  · direction: positive / negative / neutral / context(문맥에 따라 다름)
+  · role: signal(흐름 신호어) / evaluative(필자의 태도·평가) / content(대상 지칭), signal: role이 signal이면 contrast / cause / concession / emphasis, 아니면 none
+  · intensity: weak / medium / strong, keywords: 느낌 키워드 1~3개(짧은 한국어), diff: 비슷한 단어와의 차이 한 문장`;
+
+/**
+ * @param items [{ word, pos, meanings[], definition, example, exampleKo, nuance, synonyms[],
+ *                 needs: { examples: number, userWhy, grammar, confusables, profile } }]
+ * @param exclude 혼동 단어로 쓰면 안 되는 단어 (내 단어장)
+ * @returns {Promise<Array<{ word, examples[], userWhy, grammar, confusables[], profile }>>}
+ */
+export async function generatePools(items, exclude, apiKey) {
+  const { z } = await loadSdk();
+  const Forms = z.object({ s: z.string(), ed: z.string(), en: z.string(), ing: z.string() });
+  const Transitivity = z.enum(['vt', 'vi', 'both', 'none']);
+  const Schema = z.object({
+    words: z.array(
+      z.object({
+        word: z.string(),
+        examples: z.array(z.object({ en: z.string(), ko: z.string(), why: z.string() })),
+        userWhy: z.string(),
+        grammar: z.object({ transitivity: Transitivity, pattern: z.string(), level: z.number().int(), forms: Forms }),
+        confusables: z.array(
+          z.object({
+            word: z.string(),
+            pos: z.string(),
+            meanings: z.array(z.string()),
+            forms: Forms,
+            type: z.enum(['spelling', 'meaning', 'range']),
+            why: z.string(),
+            transitivity: Transitivity,
+            pattern: z.string(),
+            level: z.number().int(),
+          }),
+        ),
+        profile: ProfileSchema(z),
+      }),
+    ),
+  });
+  const lines = [`[제외] ${exclude.slice(0, 400).join(', ')}`, ''];
+  for (const it of items) {
+    const n = it.needs;
+    const need = [
+      n.examples ? `예문 ${n.examples}개` : '',
+      n.userWhy ? '내 예문 이유' : '',
+      n.grammar ? '문법' : '',
+      n.confusables ? '헷갈리는 단어' : '',
+      n.profile ? '뉘앙스 프로필' : '',
+    ].filter(Boolean);
+    lines.push(`### ${it.word} (${it.pos || '품사 미상'})`, `[필요] ${need.join(', ')}`, `[뜻] ${it.meanings.join(', ')}`);
+    if (it.definition) lines.push(`[영영] ${it.definition}`);
+    if (it.example) lines.push(`[내 예문] ${it.example}${it.exampleKo ? ' / ' + it.exampleKo : ''}`);
+    if (it.nuance) lines.push(`[느낌 메모] ${it.nuance}`);
+    if (it.synonyms.length) lines.push(`[유의어] ${it.synonyms.join(', ')}`);
+    lines.push('');
+  }
+  const out = await ask({ apiKey, system: POOL_SYSTEM, user: lines.join('\n'), schema: Schema });
+  return out.words.map((w) => ({ ...w, profile: cleanProfile(w.profile) }));
+}
+
 
 // 키 확인용: 토큰을 쓰지 않는 모델 정보 조회
 export async function testClaudeKey(apiKey) {

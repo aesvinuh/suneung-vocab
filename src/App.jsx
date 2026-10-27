@@ -10,6 +10,7 @@ import EditWord from './screens/EditWord.jsx';
 import WrongNote from './screens/WrongNote.jsx';
 import Settings from './screens/Settings.jsx';
 import AutoFillBatch from './screens/AutoFillBatch.jsx';
+import ProfileReview from './screens/ProfileReview.jsx';
 
 export default function App() {
   const { path, query } = useRoute();
@@ -44,6 +45,10 @@ export default function App() {
       break;
     case 'autofill':
       screen = <AutoFillBatch />;
+      tab = 'words';
+      break;
+    case 'profiles':
+      screen = <ProfileReview />;
       tab = 'words';
       break;
     case 'note':

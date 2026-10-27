@@ -1,5 +1,6 @@
 import { findTarget, stripMarkers } from '../lib/inflect.js';
 import { effectiveTone, POS_LABEL, TONE_LABEL } from '../lib/word.js';
+import { DIRECTION_LABEL, isFilled, profileSummary } from '../lib/profile.js';
 
 export function Sentence({ text, word, mode = 'bold' }) {
   const t = findTarget(text, word);
@@ -13,7 +14,13 @@ export function Sentence({ text, word, mode = 'bold' }) {
   );
 }
 
+// 평가 방향 표시: 프로필이 있으면 프로필(미확정이면 흐리게), 없으면 예전 감정 톤
 export function ToneTag({ word }) {
+  const p = word.profile;
+  if (isFilled(p)) {
+    const cls = { positive: 'positive', negative: 'negative' }[p.direction] || 'neutral';
+    return <span className={'tone tone-' + cls + (p.confirmed ? '' : ' unconfirmed')}>{DIRECTION_LABEL[p.direction]}{p.confirmed ? '' : '?'}</span>;
+  }
   const tone = effectiveTone(word);
   if (!tone) return null;
   return <span className={'tone tone-' + tone}>{TONE_LABEL[tone]}</span>;
@@ -29,6 +36,14 @@ export default function WordDetail({ word, showExample = true, children }) {
         <ToneTag word={word} />
       </div>
       <p className="detail-meaning">{word.meanings.join(', ')}</p>
+      {isFilled(word.profile) && (
+        <div className="detail-profile">
+          <p>
+            <b>뉘앙스 프로필{word.profile.confirmed ? '' : ' (미확정)'}</b> {profileSummary(word.profile)}
+          </p>
+          {word.profile.diff && <p className="muted">유사어와의 차이 · {word.profile.diff}</p>}
+        </div>
+      )}
       {word.nuance && <p className="detail-nuance">{word.nuance}</p>}
       {word.definition && <p className="detail-def">{word.definition}</p>}
       {word.related && <p className="detail-related"><b>관련 표현</b> {word.related}</p>}

@@ -150,9 +150,9 @@ export default function WordForm({
             </div>
           </div>
           <label className="field">
-            <Label k="nuance">뉘앙스 메모</Label>
+            <Label k="nuance">느낌 메모</Label>
             <textarea rows={3} value={f.nuance} onChange={set('nuance')} placeholder="예) 부정적. 하기 싫어서 꺼림. hesitant는 확신이 없어 망설임" />
-            <small className="hint">뉘앙스 고르기 문제의 보기로 쓰여요. 숙어·반의어·본문 형태는 아래 칸에 따로 적어 주세요.</small>
+            <small className="hint">자유 메모예요. 뉘앙스 문제는 '뉘앙스 프로필'(단어 수정 화면)로 나와요. 숙어·반의어·본문 형태는 아래 칸에 따로 적어 주세요.</small>
           </label>
           <label className="field">
             <Label k="related">관련 표현·숙어</Label>

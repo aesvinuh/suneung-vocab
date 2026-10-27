@@ -10,6 +10,9 @@ import { testClaudeKey } from '../lib/aiFill.js';
 import { useOnline } from '../lib/useOnline.js';
 import { getToken, setToken, testToken } from '../lib/sync.js';
 import NuanceCleanup from '../components/NuanceCleanup.jsx';
+import { needsPool } from '../lib/pools.js';
+import { getDailyLimit, monthUsage, setDailyLimit, todayRequests, USD_TO_KRW } from '../lib/usage.js';
+import { hasMeaning } from '../lib/word.js';
 
 export default function Settings() {
   const { words, daily, importData, clearAll, addWords } = useVocab();
@@ -59,6 +62,8 @@ export default function Settings() {
       <GithubSync />
 
       <ApiKeys />
+
+      <AiPools />
 
       <section className="card">
         <h2 className="section-title">백업</h2>
@@ -270,6 +275,77 @@ function GithubSync() {
         <li>토큰은 한 번만 보여요. 폰과 컴퓨터에 같은 토큰을 넣으면 돼요 (카톡 '나와의 채팅' 등으로 옮기기).</li>
       </ol>
       <p className="hint">토큰은 이 브라우저에만 저장돼요. 'gist' 권한만 있어서 GitHub 저장소 코드는 건드릴 수 없어요.</p>
+    </section>
+  );
+}
+
+// AI 콘텐츠 풀 (예문 풀·헷갈리는 단어·문법 정보·프로필 초안) 채우기와 사용량
+function AiPools() {
+  const { words, pool, fillPoolsNow } = useVocab();
+  const online = useOnline();
+  const [limit, setLimit] = useState(getDailyLimit);
+  const [, rerender] = useState(0);
+  const hasKey = !!getKeys().claude;
+  const studyable = words.filter(hasMeaning);
+  const ready = studyable.filter((w) => w.ai?.generatedAt).length;
+  const missing = studyable.filter(needsPool);
+  const usage = monthUsage();
+  const today = todayRequests();
+
+  const run = async () => {
+    await fillPoolsNow({ ids: missing.map((w) => w.id) });
+    rerender((n) => n + 1);
+  };
+
+  return (
+    <section className="card">
+      <h2 className="section-title">AI 문제 재료 (예문 풀 · 헷갈리는 단어)</h2>
+      <p className="hint">
+        단어마다 수능 지문 스타일 예문 5개, 헷갈리는 단어 5~8개, 문법 정보, 뉘앙스 프로필 초안을 미리 만들어 저장해요.
+        단어 추가 직후와 앱을 열 때 인터넷이 되면 부족한 것만 자동으로 채우고, 학습 중에는 저장된 것만 써요(지하철·오프라인 OK).
+      </p>
+      {!hasKey && <p className="notice">Claude API 키가 없으면 AI 재료 없이 내 단어장만으로 문제를 내요.</p>}
+      <dl className="filled">
+        <div>
+          <dt>준비된 단어</dt>
+          <dd>
+            {ready} / {studyable.length}개{missing.length > 0 && ` · 채울 것 ${missing.length}개 (예문을 다 쓴 단어 포함)`}
+          </dd>
+        </div>
+        <div>
+          <dt>이번 달 사용량 (이 기기)</dt>
+          <dd>
+            요청 {usage.requests}회 · 토큰 입력 {usage.input.toLocaleString()} / 출력 {usage.output.toLocaleString()} · 약 ${usage.usd.toFixed(2)} (≈ {Math.round(usage.usd * USD_TO_KRW).toLocaleString()}원)
+          </dd>
+        </div>
+        <div>
+          <dt>오늘 요청</dt>
+          <dd>
+            {today} / {getDailyLimit()}회
+          </dd>
+        </div>
+      </dl>
+      <button className="btn primary block" disabled={!hasKey || !online || pool.running || missing.length === 0} onClick={run}>
+        {pool.running ? `채우는 중 ${pool.done}/${pool.total}` : `지금 전체 풀 채우기 (${missing.length}개)`}
+      </button>
+      {pool.message && !pool.running && <small className="hint">{pool.message}</small>}
+      <label className="field" style={{ marginTop: 12 }}>
+        <span className="field-label">하루 최대 AI 요청 수 (요청 1번에 단어 5개씩 묶어서 만들어요)</span>
+        <div className="input-row">
+          <input type="number" min="1" inputMode="numeric" value={limit} onChange={(e) => setLimit(e.target.value)} />
+          <button
+            className="btn small"
+            onClick={() => {
+              setDailyLimit(Number(limit) || 1);
+              setLimit(getDailyLimit());
+              rerender((n) => n + 1);
+            }}
+          >
+            저장
+          </button>
+        </div>
+      </label>
+      <p className="hint">요금은 응답에 찍힌 실제 토큰 수로 계산한 대략의 값이에요. 정확한 금액은 console.anthropic.com에서 확인하세요.</p>
     </section>
   );
 }

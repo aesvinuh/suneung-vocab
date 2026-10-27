@@ -1,17 +1,28 @@
 import { useMemo, useState } from 'react';
 import { useVocab } from '../store/VocabContext.jsx';
-import { migrateWord } from '../lib/notes.js';
+import { planCleanup, needsDataUpdate } from '../lib/migrate.js';
+import { needsMigration } from '../lib/notes.js';
+import { DIRECTION_LABEL } from '../lib/profile.js';
 import { downloadBackup } from '../lib/backup.js';
 
-// 뉘앙스 칸에 본문 형태·반의어·숙어 등이 섞인 단어를 알맞은 칸으로 옮기기 (먼저 백업 안내)
+// 예전 데이터 정리 (먼저 백업 안내)
+//  · 뉘앙스 칸에 섞인 본문 형태·반의어·숙어 → 알맞은 칸
+//  · 뉘앙스 프로필 구조로 변환 (예전 뉘앙스 메모는 '느낌 메모'로 보존, 감정 톤 → 평가 방향 초기값, 미확정)
 export default function NuanceCleanup() {
   const { words, daily, saveWord } = useVocab();
-  const targets = useMemo(() => words.map((w) => ({ before: w, after: migrateWord(w) })).filter((x) => x.after), [words]);
+  const targets = useMemo(() => words.map((w) => ({ before: w, after: planCleanup(w) })).filter((x) => x.after), [words]);
+  const mixed = targets.filter((t) => needsMigration(t.before)).length;
+  const old = targets.filter((t) => needsDataUpdate(t.before)).length;
   const [backedUp, setBackedUp] = useState(false);
   const [done, setDone] = useState(null);
   const [open, setOpen] = useState(false);
 
-  if (!targets.length) return done ? <p className="notice ok">{done}개 단어를 정리했어요. 이제 뉘앙스 문제에 이상한 보기가 나오지 않아요.</p> : null;
+  if (!targets.length)
+    return done ? (
+      <p className="notice ok">
+        {done}개 단어를 정리했어요. 뉘앙스 프로필은 홈의 '프로필 미확정 → 한 번에 확인하기'에서 확정하면 뉘앙스 문제에 나와요.
+      </p>
+    ) : null;
 
   const run = async () => {
     if (!backedUp && !confirm('백업 없이 정리할까요? (되돌리려면 백업 파일이 필요해요)')) return;
@@ -25,8 +36,8 @@ export default function NuanceCleanup() {
     <section className="card warn-card">
       <h2 className="section-title">데이터 정리 필요 · {targets.length}개 단어</h2>
       <p className="hint">
-        뉘앙스 메모 칸에 본문 형태·반의어·숙어 같은 다른 정보가 섞여 있어요. 그래서 뉘앙스 고르기 문제에 '본문 형태: ○○' 같은 보기가 나왔어요.
-        정리하면 각 정보를 본문 형태 / 관련 표현·숙어 / 반의어·유의어 / 기타 메모 칸으로 옮겨요.
+        {mixed > 0 && `뉘앙스 칸에 본문 형태·반의어·숙어가 섞인 단어 ${mixed}개는 각 정보를 본문 형태 / 관련 표현·숙어 / 반의어·유의어 / 기타 메모 칸으로 옮겨요. `}
+        {old > 0 && `예전 형식 단어 ${old}개는 새 '뉘앙스 프로필' 구조로 바꿔요. 예전 뉘앙스 메모는 지우지 않고 '느낌 메모'로 그대로 두고, 감정 톤(긍정/부정/중립)은 평가 방향의 초기값으로 옮겨요(미확정).`}
       </p>
       <ol className="help">
         <li>
@@ -49,13 +60,15 @@ export default function NuanceCleanup() {
                 <strong className="detail-word">{before.word}</strong>
               </div>
               <dl className="filled">
-                {show('지금 뉘앙스 칸', before.nuance)}
-                {show('→ 남는 뉘앙스', after.nuance || '(비어 있게 됨)')}
+                {needsMigration(before) && show('지금 뉘앙스 칸', before.nuance)}
+                {needsMigration(before) && show('→ 남는 느낌 메모', after.nuance || '(비어 있게 됨)')}
                 {after.form !== before.form && show('→ 본문 형태', after.form)}
                 {after.related !== before.related && show('→ 관련 표현', after.related)}
                 {after.antonyms.length !== before.antonyms.length && show('→ 반의어', after.antonyms)}
                 {after.synonyms.length !== before.synonyms.length && show('→ 유의어', after.synonyms)}
                 {after.memo !== before.memo && show('→ 기타 메모', after.memo)}
+                {!before.profile && show('→ 뉘앙스 프로필', `새로 만듦 (미확정)${after.profile.direction ? ` · 평가 방향 ${DIRECTION_LABEL[after.profile.direction]}` : ''}`)}
+                {!before.profile && before.nuance && show('→ 느낌 메모 (그대로 보존)', before.nuance)}
               </dl>
             </div>
           ))}

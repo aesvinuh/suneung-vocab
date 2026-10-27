@@ -20,11 +20,18 @@ export default function WrongNote() {
 
   const active = useMemo(() => words.filter((w) => w.note.inNote), [words]);
   const graduated = useMemo(() => words.filter((w) => !w.note.inNote && w.note.graduatedAt), [words]);
+  // 착각 단어: '뉘앙스까지 떠오름'이라고 했는데 뉘앙스 문제를 틀린 단어
+  const illusions = useMemo(() => words.filter((w) => w.illusion?.count > 0), [words]);
   const list = useMemo(() => {
-    const base = tab === 'active' ? active : graduated;
-    const fn = tab === 'active' ? SORTS[sort].fn : (a, b) => b.note.graduatedAt - a.note.graduatedAt;
+    const base = tab === 'active' ? active : tab === 'illusion' ? illusions : graduated;
+    const fn =
+      tab === 'active'
+        ? SORTS[sort].fn
+        : tab === 'illusion'
+          ? (a, b) => b.illusion.count - a.illusion.count || b.illusion.lastAt - a.illusion.lastAt
+          : (a, b) => b.note.graduatedAt - a.note.graduatedAt;
     return [...base].sort(fn);
-  }, [tab, sort, active, graduated]);
+  }, [tab, sort, active, graduated, illusions]);
   const byId = useMemo(() => new Map(words.map((w) => [w.id, w])), [words]);
 
   return (
@@ -33,6 +40,9 @@ export default function WrongNote() {
       <div className="seg">
         <button className={tab === 'active' ? 'on' : ''} onClick={() => setTab('active')}>
           학습 중 {active.length}
+        </button>
+        <button className={tab === 'illusion' ? 'on' : ''} onClick={() => setTab('illusion')}>
+          착각 {illusions.length}
         </button>
         <button className={tab === 'grad' ? 'on' : ''} onClick={() => setTab('grad')}>
           졸업 {graduated.length}
@@ -56,7 +66,13 @@ export default function WrongNote() {
       )}
 
       {list.length === 0 ? (
-        <p className="empty">{tab === 'active' ? '틀린 단어가 없어요. 학습하면서 틀린 단어가 자동으로 모입니다.' : '아직 졸업한 단어가 없어요.'}</p>
+        <p className="empty">
+          {tab === 'active'
+            ? '틀린 단어가 없어요. 학습하면서 틀린 단어가 자동으로 모입니다.'
+            : tab === 'illusion'
+              ? "착각 단어가 없어요. 자기평가에서 '뉘앙스까지 떠오름'을 고르고 뉘앙스 문제를 틀리면 여기에 모여요."
+              : '아직 졸업한 단어가 없어요.'}
+        </p>
       ) : (
         <ul className="list">
           {list.map((w) => {
@@ -76,6 +92,7 @@ export default function WrongNote() {
                     틀림 {w.stats.wrong} · 오답률 {Math.round(errorRate(w) * 100)}% · 마지막 오답 {formatDate(w.stats.lastWrongAt)}
                     {tab === 'active' && w.note.streak > 0 && ` · 연속 ${w.note.streak}/${GRADUATION.streak}`}
                     {tab === 'grad' && ` · 졸업 ${formatDate(w.note.graduatedAt)}`}
+                    {w.illusion?.count > 0 && ` · 착각 ${w.illusion.count}회 (${formatDate(w.illusion.lastAt)})`}
                   </span>
                 </button>
                 {open && (

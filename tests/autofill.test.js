@@ -173,11 +173,12 @@ test('AI 해설: 유의어·반의어는 후보 중에서만', async () => {
   mockFetch([
     ['api.anthropic.com', (url, init) => {
       const b = JSON.parse(init.body);
-      const out = { meanings: ['꼼꼼한'], tone: 'positive', synonyms: ['careful', 'Painstaking', 'thorough'], antonyms: ['careless', 'messy'], nuance: 'n', related: '', example: '', exampleKo: 'k' };
+      const out = { meanings: ['꼼꼼한'], tone: 'positive', synonyms: ['careful', 'Painstaking', 'thorough'], antonyms: ['careless', 'messy'], nuance: 'n', related: '', example: '', exampleKo: 'k', profile: { direction: 'positive', role: 'evaluative', signal: 'none', intensity: 'medium', keywords: ['꼼꼼함', ' 세심 '], diff: '' } };
       return { id: 'm', type: 'message', role: 'assistant', model: b.model, content: [{ type: 'text', text: JSON.stringify(out) }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } };
     }],
   ]);
   const r = await generateKorean({ word: 'meticulous', senses: [], synonyms: ['careful', 'painstaking', 'bemist'], antonyms: ['careless'], example: 'x' }, 'sk-ant-test');
   assert.deepEqual(r.synonyms, ['careful', 'painstaking']); // 후보에 없는 thorough 제외, 표기는 후보대로
   assert.deepEqual(r.antonyms, ['careless']);
+  assert.deepEqual(r.profile, { direction: 'positive', role: 'evaluative', signal: '', intensity: 'medium', keywords: ['꼼꼼함', '세심'], diff: '' });
 });

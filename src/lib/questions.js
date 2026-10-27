@@ -1,8 +1,11 @@
 // 문제 생성: 단어 하나를 받아 가능한 유형 중 하나를 골라 문제 객체를 만든다.
-import { findTarget, maskWord, stripMarkers } from './inflect.js';
-import { splitNuance } from './notes.js';
+// 오답 선지 규칙은 distractors.js, 예문 고르기는 pools.js. 만들 수 없는 유형은 null을 돌려주고 다른 유형으로 대체한다.
+import { findTarget } from './inflect.js';
 import { TYPE_WEIGHTS, pickWeighted } from './weights.js';
-import { effectiveTone, registeredSynonyms, TONE_OPTIONS, uid } from './word.js';
+import { registeredSynonyms, uid } from './word.js';
+import { meaningOptions, wordOptions, inflectionKind, inflectTo } from './distractors.js';
+import { pickExample } from './pools.js';
+import { feelSimilarity, isConfirmed, ROLE_CHOICES, roleKey, STANCES, stanceKey } from './profile.js';
 
 export const TYPE_LABEL = {
   meaning: '뜻 고르기',
@@ -12,8 +15,12 @@ export const TYPE_LABEL = {
   nuance: '뉘앙스',
   self: '자기평가',
 };
-
-export const meaningLabel = (w) => w.meanings.slice(0, 3).join(', ');
+export const NUANCE_LABEL = {
+  stance: '필자의 태도',
+  role: '글 속 역할',
+  feel: '비슷한 느낌',
+  pair: '더 자연스러운 단어',
+};
 
 function shuffle(arr, rng) {
   const a = [...arr];
@@ -24,169 +31,69 @@ function shuffle(arr, rng) {
   return a;
 }
 
-// ── 오답 보기 고르기: 같은 품사 + 뜻이 비슷한(한글 2글자 조각이 겹치는) 단어 우선 ──
-function bigrams(word) {
-  const set = new Set();
-  for (const m of word.meanings) {
-    const t = m.replace(/[\s,.;/()~·…'"-]/g, '');
-    if (t.length === 1) set.add(t);
-    for (let i = 0; i < t.length - 1; i++) set.add(t.slice(i, i + 2));
-  }
-  return set;
-}
-
-function meaningSimilarity(a, b) {
-  const A = bigrams(a);
-  const B = bigrams(b);
-  if (!A.size || !B.size) return 0;
-  let inter = 0;
-  for (const x of A) if (B.has(x)) inter++;
-  return inter / (A.size + B.size - inter);
-}
-
-function pickDistractors(target, all, n, rng, filter) {
-  const confused = target.note?.confusedWith || {};
-  return all
-    .filter((w) => w.id !== target.id && filter(w))
-    .map((w) => ({
-      w,
-      score:
-        (target.pos && w.pos === target.pos ? 3 : 0) +
-        meaningSimilarity(target, w) * 4 +
-        Math.min(confused[w.id] || 0, 3) * 0.7 +
-        rng() * 2.5,
-    }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, n)
-    .map((x) => x.w);
-}
-
-// 뜻 보기용: 정답과 같은 뜻을 가진 단어는 보기에서 제외(정답이 두 개가 되지 않게)
-const meaningFilter = (target) => (w) =>
-  w.meanings.length > 0 && !w.meanings.some((m) => target.meanings.includes(m));
-
-// 단어 보기용: 유의어/같은 뜻 단어는 빈칸에 들어가도 말이 될 수 있으니 제외
-const wordFilter = (target, all) => {
-  const syn = new Set(registeredSynonyms(target, all).map((w) => w.id));
-  const meaningOk = meaningFilter(target);
-  return (w) => !syn.has(w.id) && meaningOk(w) && w.word.toLowerCase() !== target.word.toLowerCase();
-};
-
-// ── 뉘앙스 문제 보기 규칙 ──
-// - 각 단어의 뉘앙스 메모 전체(한 덩어리)를 보기로 쓴다. 줄 단위로 쪼개지 않는다.
-// - 정답 단어(활용형 포함)는 ○○로 가린다. 가린 뒤 남는 글자(한글·영문)가 MIN_VISIBLE 미만이면 보기로 쓰지 않는다.
-// - 본문 형태·반의어·숙어 같은 정보가 섞인 메모는 쓰지 않는다 (설정 → 데이터 정리로 분리 가능).
-// - 같은 문구의 보기는 하나만. 조건에 맞는 오답 보기가 NUANCE_DISTRACTORS개 미만이면 이 문제(메모형)는 내지 않는다.
-const MIN_VISIBLE = 10;
-const NUANCE_DISTRACTORS = 3;
-const memoLabel = (w) => clip(maskWord(w.nuance, w.word));
-const visibleChars = (s) => (s.replace(/○/g, '').match(/[가-힣A-Za-z]/g) || []).length;
-const hasNuance = (w) => !!w.nuance && visibleChars(memoLabel(w)) >= MIN_VISIBLE && splitNuance(w.nuance, w.word).moved === 0;
-const withNuance = (target) => (w) => hasNuance(w) && memoLabel(w) !== memoLabel(target);
-// 서로 다른 보기 후보 (같은 문구는 하나만)
-function nuancePool(target, all) {
-  const seen = new Set([memoLabel(target)]);
-  return all.filter((w) => w.id !== target.id && withNuance(target)(w) && !seen.has(memoLabel(w)) && seen.add(memoLabel(w)));
-}
-
-// ── 단어별로 가능한 유형 판정 ──
-export function availableTypes(word, all) {
-  const types = ['self'];
-  const others = all.filter((w) => w.id !== word.id);
-  const target = findTarget(word.example, word.word);
-  const meaningPool = others.filter(meaningFilter(word)).length;
-
-  if (word.meanings.length && meaningPool >= 3) types.push('meaning');
-  if (target && others.filter(wordFilter(word, all)).length >= 3) types.push('blank');
-  if (target && word.meanings.length && meaningPool >= 3) types.push('underline');
-  if (target && registeredSynonyms(word, all).length >= 1) types.push('synonym');
-  if (effectiveTone(word) || (hasNuance(word) && nuancePool(word, all).length >= NUANCE_DISTRACTORS)) types.push('nuance');
-  return types;
-}
-
-// ── 문제 만들기 ──
-export function buildQuestion(word, all, rng = Math.random) {
-  const types = availableTypes(word, all);
-  const type = pickWeighted(types.map((t) => [t, TYPE_WEIGHTS[t] ?? 1]), rng);
-  const q = BUILDERS[type](word, all, rng);
-  return { key: uid(), type, wordId: word.id, ...q };
-}
-
-const wordOption = (w, correct) => ({ key: w.id, label: w.word, wordId: w.id, correct });
-const meaningOption = (w, correct) => ({ key: w.id, label: meaningLabel(w), wordId: w.id, correct });
+const sentence = (word, ex, mode, extra = {}) => ({ kind: 'sentence', mode, ...findTarget(ex.en, word.word), ...extra });
+const exampleInfo = (ex) => (ex ? { id: ex.id, en: ex.en, ko: ex.ko, why: ex.why || '', source: ex.source } : null);
 
 const BUILDERS = {
   meaning(word, all, rng) {
-    const ds = pickDistractors(word, all, 3, rng, meaningFilter(word));
+    const mo = meaningOptions(word, all, rng);
+    if (!mo) return null;
     return {
       title: '알맞은 뜻은?',
       prompt: { kind: 'word', word: word.word, pos: word.pos },
-      options: shuffle([meaningOption(word, true), ...ds.map((w) => meaningOption(w, false))], rng),
-    };
-  },
-
-  blank(word, all, rng) {
-    const ds = pickDistractors(word, all, 3, rng, wordFilter(word, all));
-    return {
-      title: '빈칸에 들어갈 단어는?',
-      prompt: { kind: 'sentence', mode: 'blank', ...findTarget(word.example, word.word) },
-      options: shuffle([wordOption(word, true), ...ds.map((w) => wordOption(w, false))], rng),
+      options: shuffle([mo.correct, ...mo.distractors], rng),
     };
   },
 
   underline(word, all, rng) {
-    const ds = pickDistractors(word, all, 3, rng, meaningFilter(word));
+    const ex = pickExample(word, rng);
+    const mo = ex && meaningOptions(word, all, rng);
+    if (!mo) return null;
     return {
       title: '밑줄 친 단어의 문맥상 의미는?',
-      prompt: { kind: 'sentence', mode: 'underline', ...findTarget(word.example, word.word) },
-      options: shuffle([meaningOption(word, true), ...ds.map((w) => meaningOption(w, false))], rng),
+      prompt: sentence(word, ex, 'underline'),
+      example: exampleInfo(ex),
+      options: shuffle([mo.correct, ...mo.distractors], rng),
+    };
+  },
+
+  blank(word, all, rng) {
+    const ex = pickExample(word, rng);
+    if (!ex) return null;
+    const t = findTarget(ex.en, word.word);
+    const wo = wordOptions(word, all, t.target, rng);
+    if (!wo) return null;
+    return {
+      title: '빈칸에 들어갈 단어는?',
+      prompt: sentence(word, ex, 'blank'),
+      example: exampleInfo(ex),
+      options: shuffle([wo.correct, ...wo.distractors], rng),
     };
   },
 
   synonym(word, all, rng) {
     const syns = shuffle(registeredSynonyms(word, all), rng).slice(0, 3);
-    const used = new Set([word.id, ...syns.map((w) => w.id)]);
-    const pad = pickDistractors(word, all, 3 - syns.length, rng, (w) => !used.has(w.id) && wordFilter(word, all)(w));
+    const ex = syns.length && pickExample(word, rng);
+    if (!ex) return null;
+    const t = findTarget(ex.en, word.word);
+    const wo = wordOptions(word, all, t.target, rng, { include: syns, allowSynonyms: true });
+    if (!wo) return null;
     return {
       title: '문맥과 뉘앙스에 가장 맞는 단어는?',
-      prompt: {
-        kind: 'sentence',
-        mode: 'blank',
-        ...findTarget(word.example, word.word),
-        hint: word.exampleKo, // 유의어끼리는 문법상 둘 다 들어갈 수 있어 해석을 힌트로 보여줌
-      },
-      options: shuffle(
-        [wordOption(word, true), ...syns.map((w) => wordOption(w, false)), ...pad.map((w) => wordOption(w, false))],
-        rng,
-      ),
+      prompt: sentence(word, ex, 'blank', { hint: ex.ko }), // 유의어끼리는 문법상 다 들어갈 수 있어 해석을 힌트로
+      example: exampleInfo(ex),
+      options: shuffle([wo.correct, ...wo.distractors], rng),
     };
   },
 
+  // 뉘앙스: 확정된 프로필로만 출제. 4가지 중 가능한 것을 랜덤으로
   nuance(word, all, rng) {
-    const tone = effectiveTone(word);
-    const pool = hasNuance(word) ? nuancePool(word, all) : [];
-    const canMemo = pool.length >= NUANCE_DISTRACTORS;
-    const useTone = tone && (!canMemo || rng() < 0.5);
-
-    if (useTone) {
-      return {
-        title: '이 단어의 뉘앙스는?',
-        prompt: { kind: 'word', word: word.word, pos: word.pos },
-        options: TONE_OPTIONS.map((t) => ({ key: t.value, label: t.label + '적', wordId: null, correct: t.value === tone })),
-      };
+    if (!isConfirmed(word)) return null;
+    for (const sub of shuffle(Object.keys(NUANCE), rng)) {
+      const q = NUANCE[sub](word, all, rng);
+      if (q) return { sub, ...q };
     }
-    const poolIds = new Set(pool.map((w) => w.id));
-    const ds = pickDistractors(word, all, 3, rng, (w) => poolIds.has(w.id));
-    const memo = memoLabel;
-    return {
-      title: '이 단어에 맞는 뉘앙스 설명은?',
-      prompt: { kind: 'word', word: word.word, pos: word.pos },
-      small: true,
-      options: shuffle(
-        [{ ...meaningOption(word, true), label: memo(word) }, ...ds.map((w) => ({ ...meaningOption(w, false), label: memo(w) }))],
-        rng,
-      ),
-    };
+    return null;
   },
 
   self(word) {
@@ -202,7 +109,111 @@ const BUILDERS = {
   },
 };
 
-function clip(text, max = 160) {
-  const t = stripMarkers(text).replace(/\s+/g, ' ');
-  return t.length > max ? t.slice(0, max - 1) + '…' : t;
+const choiceOptions = (table, correctKey, rng) => {
+  if (!correctKey || !table[correctKey]) return null;
+  const others = shuffle(Object.keys(table).filter((k) => k !== correctKey), rng).slice(0, 3);
+  if (others.length < 3) return null;
+  return shuffle(
+    [{ key: correctKey, label: table[correctKey], correct: true }, ...others.map((k) => ({ key: k, label: table[k], correct: false }))],
+    rng,
+  );
+};
+
+const NUANCE = {
+  // 예문 제시 후 "이 단어로 볼 때 필자는 앞 내용을 어떻게 보고 있나?" (평가 방향 + 글 속 역할)
+  stance(word, all, rng) {
+    const ex = pickExample(word, rng);
+    const options = ex && choiceOptions(STANCES, stanceKey(word.profile), rng);
+    if (!options) return null;
+    return {
+      title: '밑줄 친 단어로 볼 때, 필자는 앞 내용을 어떻게 보고 있나?',
+      prompt: sentence(word, ex, 'underline', { hint: ex.ko }),
+      example: exampleInfo(ex),
+      small: true,
+      options,
+    };
+  },
+
+  // "이 단어가 글에서 하는 역할은?"
+  role(word, all, rng) {
+    const options = choiceOptions(ROLE_CHOICES, roleKey(word.profile), rng);
+    if (!options) return null;
+    const ex = pickExample(word, rng);
+    return {
+      title: '이 단어가 글에서 하는 역할은?',
+      prompt: ex ? sentence(word, ex, 'underline') : { kind: 'word', word: word.word, pos: word.pos },
+      example: exampleInfo(ex),
+      small: true,
+      options,
+    };
+  },
+
+  // "이 단어와 느낌이 가장 가까운 것은?" — 확정된 내 단어 중 프로필이 가장 비슷한 것
+  feel(word, all, rng) {
+    const others = all.filter((w) => w.id !== word.id && isConfirmed(w));
+    if (others.length < 4) return null;
+    const ranked = others.map((w) => ({ w, s: feelSimilarity(word.profile, w.profile) })).sort((a, b) => b.s - a.s);
+    const best = ranked[0];
+    if (ranked[1] && ranked[1].s >= best.s - 1) {
+      // 1등이 분명하지 않으면 공동 1등끼리는 보기에 함께 넣지 않음
+      if (ranked[1].s === best.s) return null;
+    }
+    const far = shuffle(ranked.filter((x) => x.s <= best.s - 2), rng).slice(0, 3);
+    if (far.length < 3) return null;
+    const opt = (x, correct) => ({ key: x.w.id, label: x.w.word, wordId: x.w.id, correct });
+    return {
+      title: '이 단어와 느낌이 가장 가까운 것은?',
+      prompt: { kind: 'word', word: word.word, pos: word.pos },
+      options: shuffle([opt(best, true), ...far.map((x) => opt(x, false))], rng),
+    };
+  },
+
+  // 유사어 두 개를 주고 "이 문맥에 더 자연스러운 것은?" — 프로필의 '유사어와의 차이'가 있어야 함
+  pair(word, all, rng) {
+    if (!word.profile.diff) return null;
+    const ex = pickExample(word, rng);
+    if (!ex) return null;
+    const t = findTarget(ex.en, word.word);
+    const kind = inflectionKind(word.word, t.target, word.ai?.grammar?.forms);
+    if (!kind) return null;
+    const mine = registeredSynonyms(word, all).filter((w) => !w.pos || w.pos === word.pos);
+    const aiSyn = (word.ai?.confusables || []).filter((c) => c.type !== 'spelling');
+    const rival = mine.length
+      ? { word: mine[0].word, pos: mine[0].pos, forms: mine[0].ai?.grammar?.forms, wordId: mine[0].id, confusable: null }
+      : aiSyn[0] && { word: aiSyn[0].word, pos: aiSyn[0].pos, forms: aiSyn[0].forms, wordId: null, confusable: aiSyn[0] };
+    if (!rival) return null;
+    const label = inflectTo(rival.word, kind, { forms: rival.forms, pos: rival.pos });
+    if (!label || label.toLowerCase() === t.target.toLowerCase()) return null;
+    const cased = /^[A-Z]/.test(t.target) ? label[0].toUpperCase() + label.slice(1) : label;
+    return {
+      title: '이 문맥에 더 자연스러운 단어는?',
+      prompt: sentence(word, ex, 'blank', { hint: ex.ko }),
+      example: exampleInfo(ex),
+      options: shuffle(
+        [
+          { key: word.id, label: t.target, wordId: word.id, correct: true },
+          { key: 'rival', label: cased, wordId: rival.wordId, confusable: rival.confusable, correct: false },
+        ],
+        rng,
+      ),
+    };
+  },
+};
+
+// ── 문제 만들기 ──
+// types: 이 중에서만 고름 (자기평가 후속 문제용). 하나도 안 되면 null
+export function buildQuestion(word, all, rng = Math.random, { types } = {}) {
+  let pool = (types || Object.keys(BUILDERS)).filter((t) => BUILDERS[t]);
+  while (pool.length) {
+    const type = pickWeighted(pool.map((t) => [t, TYPE_WEIGHTS[t] ?? 1]), rng);
+    const q = BUILDERS[type](word, all, rng);
+    if (q) return { key: uid(), type, wordId: word.id, example: null, ...q };
+    pool = pool.filter((t) => t !== type); // 만들 수 없는 유형 → 다른 유형으로 대체
+  }
+  return null;
+}
+
+// 지금 만들 수 있는 유형 (자기평가 포함)
+export function availableTypes(word, all, rng = Math.random) {
+  return Object.keys(BUILDERS).filter((t) => BUILDERS[t](word, all, rng));
 }

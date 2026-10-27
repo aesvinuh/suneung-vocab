@@ -49,17 +49,25 @@ test('가중치: 새 단어/오답 많은 단어 > 잘 아는 단어, 최소값 
   assert.ok(computeWeight(hard, { now, mode: 'note' }) > computeWeight(hard, { now }));
 });
 
-test('문제 유형: 샘플에서 6가지 모두 출제 가능', () => {
+test('문제 유형: 샘플(프로필 확정)에서 6가지 모두 출제, 정답은 하나, 보기 중복 없음', async () => {
+  const { isConfirmed } = await import('../src/lib/profile.js');
+  const prof = { positive: ['positive', 'evaluative'], negative: ['negative', 'evaluative'], neutral: ['neutral', 'content'] };
+  const ws = words.map((w, i) => {
+    const [direction, role] = prof[w.tone] || ['neutral', 'content'];
+    return normalizeWord({ ...w, profile: { direction, role, intensity: ['weak', 'medium', 'strong'][i % 3], keywords: [], diff: '차이 설명', confirmed: true } });
+  });
+  assert.ok(ws.every(isConfirmed));
   const seen = new Set();
-  for (const w of words) availableTypes(w, words).forEach((t) => seen.add(t));
+  for (const w of ws) availableTypes(w, ws).forEach((t) => seen.add(t));
   assert.deepEqual([...seen].sort(), ['blank', 'meaning', 'nuance', 'self', 'synonym', 'underline']);
   for (let i = 0; i < 500; i++) {
-    const w = words[i % words.length];
-    const q = buildQuestion(w, words);
-    const correct = q.options.filter((o) => o.correct);
-    if (q.type !== 'self') assert.equal(correct.length, 1, q.type);
-    assert.equal(new Set(q.options.map((o) => o.label)).size, q.options.length, 'no duplicate labels');
+    const w = ws[i % ws.length];
+    const q = buildQuestion(w, ws);
+    if (q.type !== 'self') assert.equal(q.options.filter((o) => o.correct).length, 1, q.type);
+    assert.equal(new Set(q.options.map((o) => o.label)).size, q.options.length, `no duplicate labels: ${q.type}`);
   }
+  // 프로필이 확정되지 않으면 뉘앙스 문제는 안 나옴
+  for (const w of words) assert.ok(!availableTypes(w, words).includes('nuance'));
 });
 
 test('오답 노트 등록과 졸업', () => {
@@ -122,29 +130,4 @@ test('데이터 정리: 예전 파서가 뉘앙스 칸에 넣은 정보를 알�
   assert.equal(mixed.form, 'reluctantly');
   assert.deepEqual(mixed.synonyms, ['hesitant']);
   assert.equal(migrateWord(words[0]), null); // 샘플 단어는 손댈 것 없음
-});
-
-test('뉘앙스 문제 보기: 섞인 메모·너무 짧은 메모 제외, 중복 없음, 오답 3개 미만이면 출제 안 함', async () => {
-  const { availableTypes } = await import('../src/lib/questions.js');
-  const messy = ['settlement', 'vary', 'arrange', 'constraint'].map((w) => normalizeWord({ word: w, meanings: w + '뜻', nuance: `본문 형태: ${w}s` }));
-  const short = normalizeWord({ word: 'mutually', meanings: '서로', nuance: 'mutually 서로 쓰임' }); // 가리면 거의 안 남음
-  const all = [...words, ...messy, short];
-  for (let i = 0; i < 600; i++) {
-    const q = buildQuestion(all[i % all.length], all);
-    const labels = q.options.map((o) => o.label);
-    assert.equal(new Set(labels).size, labels.length, `${q.type}: ${labels.join(' / ')}`);
-    if (q.type === 'nuance' && q.small) {
-      assert.equal(labels.length, 4);
-      assert.ok(!labels.some((l) => l.startsWith('본문 형태') || l.includes('○○ 서로')), labels.join(' / '));
-    }
-  }
-  // 섞인 메모만 있는 단어끼리면 뉘앙스(메모형) 문제 없음
-  const onlyMessy = [...messy, short];
-  for (const w of onlyMessy) assert.ok(!availableTypes(w, onlyMessy).includes('nuance'));
-  // 쓸 만한 오답 메모가 2개뿐이면 출제 안 함 (3개 필요)
-  const four = words.slice(0, 3).map((w) => ({ ...w, tone: '' }));
-  const noTone = (w) => ({ ...w, tone: '', nuance: w.nuance.replace(/긍정|부정|중립/g, '') });
-  const three = four.map(noTone);
-  assert.ok(!availableTypes(three[0], three).includes('nuance'));
-  assert.ok(availableTypes(noTone(words[0]), words.slice(0, 4).map(noTone)).includes('nuance'));
 });
